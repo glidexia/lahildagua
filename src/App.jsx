@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  Droplet, Droplets, Package, Truck, User, MapPin, Building2, Home, Briefcase,
+  Droplet, Droplets, Package, Truck, User, MapPin, Building2, Home, Briefcase, Store,
   CheckCircle2, XCircle, Clock, LayoutDashboard, Users, ChevronRight, ChevronLeft,
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
-  Loader2, AlertCircle
+  Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
 /* ---------------------------------- API ---------------------------------- */
 const API_BASE = "https://hilda-production.up.railway.app";
@@ -60,15 +60,25 @@ const fonts = (
     .theme-dark input,.theme-dark select{color-scheme:dark}
     .theme-light input,.theme-light select{color-scheme:light}
     @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes wspBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+    .wsp-bounce{animation:wspBounce 1.8s ease-in-out infinite}
   `}</style>
 );
 
 const PAGOS = ["Efectivo", "Transferencia", "Mercado Pago"];
 const TIPOS_LUGAR = [{ id: "casa", label: "Casa", Icon: Home }, { id: "oficina", label: "Oficina", Icon: Briefcase }, { id: "empresa", label: "Empresa", Icon: Building2 }];
+// Lo que ve el cliente son 3 botones, pero el catálogo real solo tiene 2 categorías: "hogar" comparte con nadie,
+// "oficina" y "revendedor" comparten el mismo catálogo (el de mayoristas/oficinas).
+const OPCIONES_SEGMENTO = [
+  { id: "hogar", label: "Hogar", categoria: "hogar", Icon: Home, desc: "Para tu casa" },
+  { id: "oficina", label: "Oficina", categoria: "oficina_revendedor", Icon: Briefcase, desc: "Para tu empresa" },
+  { id: "revendedor", label: "Revendedor", categoria: "oficina_revendedor", Icon: Store, desc: "Compra por mayor" },
+];
 function fmtDate(d) { return d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" }); }
 const HOY = new Date(), AYER = new Date(HOY), MANANA = new Date(HOY);
 AYER.setDate(HOY.getDate() - 1); MANANA.setDate(HOY.getDate() + 1);
 const DIAS = { ayer: { label: "Ayer", fecha: fmtDate(AYER) }, hoy: { label: "Hoy", fecha: fmtDate(HOY) }, manana: { label: "Mañana", fecha: fmtDate(MANANA) } };
+function isoDate(d) { return d.toISOString().slice(0, 10); }
 
 /* ---------------------------------- HELPERS UI ---------------------------------- */
 function Spinner({ size = 16 }) { const c = useTheme(); return <Loader2 size={size} color={c.textFaint} style={{ animation: "spin 0.9s linear infinite" }} />; }
@@ -96,6 +106,27 @@ function Input(props) {
 function Select({ children, ...props }) {
   const c = useTheme();
   return <select {...props} className="f-body px-3 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }}>{children}</select>;
+}
+// Selector rápido de rango de fechas, reutilizado en Dashboard / Pedidos / Clientes
+function RangoFechas({ desde, hasta, setDesde, setHasta }) {
+  const c = useTheme();
+  const preset = (dias) => {
+    const h = new Date();
+    const d = new Date();
+    d.setDate(d.getDate() - (dias - 1));
+    setDesde(isoDate(d)); setHasta(isoDate(h));
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button onClick={() => preset(7)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted, border: `1px solid ${c.border}` }}>7 días</button>
+      <button onClick={() => preset(30)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted, border: `1px solid ${c.border}` }}>30 días</button>
+      <button onClick={() => preset(90)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted, border: `1px solid ${c.border}` }}>90 días</button>
+      <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="f-body text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} />
+      <span className="f-body text-[11px]" style={{ color: c.textFaint }}>a</span>
+      <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="f-body text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} />
+      {(desde || hasta) && <button onClick={() => { setDesde(""); setHasta(""); }} className="f-body text-[11px] underline" style={{ color: c.textFaint }}>Limpiar</button>}
+    </div>
+  );
 }
 
 /* ---------------------------------- ZONE MAP ---------------------------------- */
@@ -126,6 +157,23 @@ function ZoneMap({ highlightBarrio, zonas }) {
   );
 }
 
+/* ---------------------------------- WHATSAPP FLOTANTE ---------------------------------- */
+function WhatsAppFlotante() {
+  const c = useTheme();
+  return (
+    <a href="https://wa.me/3515937318" target="_blank" rel="noopener noreferrer"
+      className="flex items-center gap-2"
+      style={{ position: "fixed", bottom: 18, right: 18, zIndex: 60, textDecoration: "none" }}>
+      <span className="f-body text-xs px-3 py-2 rounded-full shadow-lg hidden sm:inline-block" style={{ background: c.surface, color: c.text, border: `1px solid ${c.border}` }}>
+        ¿Alguna duda? Escribinos acá 👋
+      </span>
+      <span className="wsp-bounce" style={{ width: 54, height: 54, borderRadius: "9999px", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(0,0,0,0.28)" }}>
+        <MessageCircle size={27} color="#fff" fill="#fff" />
+      </span>
+    </a>
+  );
+}
+
 /* ---------------------------------- VIDRIERA (CLIENTE) ---------------------------------- */
 function ClientePortal({ onAccesoInterno }) {
   const c = useTheme();
@@ -133,7 +181,8 @@ function ClientePortal({ onAccesoInterno }) {
   const [zonas, setZonas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0); // 0: segmento, 1: productos, 2: datos, 3: revisión
+  const [segmento, setSegmento] = useState(null); // { id, categoria, label }
   const [cant, setCant] = useState({});
   const [form, setForm] = useState({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo" });
   const [confirmado, setConfirmado] = useState(null);
@@ -150,16 +199,19 @@ function ClientePortal({ onAccesoInterno }) {
     })();
   }, []);
 
+  const productosDelSegmento = productos.filter(p => !segmento || p.categoria === segmento.categoria);
   const totalItems = Object.values(cant).reduce((a, b) => a + b, 0);
   const totalPrecio = Object.entries(cant).reduce((sum, [id, q]) => sum + (productos.find(p => p.id === Number(id))?.precio ? Number(productos.find(p => p.id === Number(id)).precio) * q : 0), 0);
   const camionAsignado = useMemo(() => { const z = zonas.find(x => x.barrio === form.barrio); return z ? { id: z.camionId, nombre: z.nombre, color: z.color } : null; }, [form.barrio, zonas]);
   const setQty = (id, delta) => setCant(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }));
 
+  const elegirSegmento = (op) => { setSegmento(op); setCant({}); setStep(1); };
+
   const confirmar = async () => {
     setEnviando(true); setError("");
     try {
       const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q }));
-      const resp = await api("/public/pedidos", { method: "POST", body: { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, pago: form.pago, items } });
+      const resp = await api("/public/pedidos", { method: "POST", body: { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "hogar", pago: form.pago, items } });
       setConfirmado(resp);
     } catch (e) { setError(e.message || "No pudimos registrar el pedido."); }
     setEnviando(false);
@@ -190,17 +242,32 @@ function ClientePortal({ onAccesoInterno }) {
               <div className="h-px" style={{ background: c.border }} />
               <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
             </div>
-            <button onClick={() => { setConfirmado(null); setStep(1); setCant({}); setForm({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo" }); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
+            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setForm({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo" }); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
           </div>
         ) : (
           <div className="max-w-md mx-auto px-4 py-6">
-            <div className="mb-6"><p className="f-body text-xs tracking-wide uppercase" style={{ color: c.accent }}>Pedí online</p><h2 className="f-display text-2xl font-semibold" style={{ color: c.text }}>Agua para mañana</h2></div>
-            <div className="flex items-center gap-2 mb-6">{[1, 2, 3].map(n => <div key={n} className="flex-1 h-1 rounded-full" style={{ background: step >= n ? c.accent : c.border }} />)}</div>
+            <div className="mb-6"><p className="f-body text-xs tracking-wide uppercase" style={{ color: c.accent }}>Pedí online</p><h2 className="f-display text-2xl font-semibold" style={{ color: c.text }}>Agua para tu próxima entrega</h2></div>
+            <div className="flex items-center gap-2 mb-6">{[0, 1, 2, 3].map(n => <div key={n} className="flex-1 h-1 rounded-full" style={{ background: step >= n ? c.accent : c.border }} />)}</div>
             <ErrorBanner mensaje={error} />
+
+            {step === 0 && (
+              <div className="space-y-3">
+                <p className="f-body text-sm mb-1" style={{ color: c.text }}>¿Para qué necesitás pedir?</p>
+                <p className="f-body text-xs mb-4" style={{ color: c.textFaint }}>Así te mostramos el catálogo y los precios que corresponden.</p>
+                {OPCIONES_SEGMENTO.map(op => (
+                  <button key={op.id} onClick={() => elegirSegmento(op)} className="f-body w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-colors" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+                    <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}><op.Icon size={20} color={c.accent} /></div>
+                    <div className="flex-1"><p className="text-sm font-medium" style={{ color: c.text }}>{op.label}</p><p className="text-xs" style={{ color: c.textFaint }}>{op.desc}</p></div>
+                    <ChevronRight size={16} color={c.textFaint} />
+                  </button>
+                ))}
+              </div>
+            )}
 
             {step === 1 && (
               <div className="space-y-3">
-                {productos.map(p => (
+                <button onClick={() => setStep(0)} className="f-body flex items-center gap-1 text-xs mb-1" style={{ color: c.textFaint }}><ChevronLeft size={13} /> {segmento?.label}</button>
+                {productosDelSegmento.map(p => (
                   <div key={p.id} className="rounded-2xl p-4 flex items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}><Droplet size={18} color={c.accent} /></div>
                     <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{p.descripcion}</p><p className="f-mono text-xs mt-0.5" style={{ color: c.accent }}>${Number(p.precio).toLocaleString("es-AR")}</p></div>
@@ -211,6 +278,7 @@ function ClientePortal({ onAccesoInterno }) {
                     </div>
                   </div>
                 ))}
+                {productosDelSegmento.length === 0 && <p className="f-body text-xs text-center py-6" style={{ color: c.textFaint }}>Todavía no hay productos cargados para esta categoría.</p>}
                 <button disabled={totalItems === 0} onClick={() => setStep(2)} className="f-body w-full mt-2 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Continuar ({totalItems}) <ChevronRight size={15} /></button>
               </div>
             )}
@@ -239,7 +307,7 @@ function ClientePortal({ onAccesoInterno }) {
                   <div className="h-px my-1" style={{ background: c.border }} />
                   <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span></div>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><CalendarClock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>Entrega estimada: <b>próximo día hábil</b> con {camionAsignado?.nombre}</span></div>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><CalendarClock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>Entrega estimada: <b>próximo día hábil</b> (nunca sábados ni domingos) con {camionAsignado?.nombre}</span></div>
                 <div className="flex gap-2"><button onClick={() => setStep(2)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={enviando} onClick={confirmar} className="f-body flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{enviando && <Spinner size={14} />} Confirmar pedido</button></div>
               </div>
             )}
@@ -250,6 +318,7 @@ function ClientePortal({ onAccesoInterno }) {
       <button onClick={onAccesoInterno} className="f-body flex items-center justify-center gap-1.5 py-4 text-[11px] opacity-60 hover:opacity-100 transition-opacity" style={{ color: c.textFaint }}>
         <Lock size={11} /> Acceso interno
       </button>
+      <WhatsAppFlotante />
     </div>
   );
 }
@@ -258,8 +327,19 @@ function ClientePortal({ onAccesoInterno }) {
 function AccesoPrivadoGate({ onDesbloqueado, onVolver }) {
   const c = useTheme();
   const [clave, setClave] = useState("");
-  const [error, setError] = useState(false);
-  const validar = () => { if (clave.trim() === "") { setError(true); return; } setError(false); onDesbloqueado(); };
+  const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
+
+  const validar = async () => {
+    setCargando(true); setError("");
+    try {
+      const resp = await api("/public/area-privada/verificar", { method: "POST", body: { clave } });
+      if (resp.ok) onDesbloqueado();
+      else setError("Contraseña incorrecta.");
+    } catch (e) { setError("No pudimos verificar la clave. Probá de nuevo."); }
+    setCargando(false);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: c.bgAlt }}>
       <div className="w-full max-w-sm">
@@ -270,11 +350,10 @@ function AccesoPrivadoGate({ onDesbloqueado, onVolver }) {
           <p className="f-body text-xs mt-1" style={{ color: c.textFaint }}>Ingresá la contraseña del apartado para continuar</p>
         </div>
         <div className="space-y-2.5">
-          <Input placeholder="Contraseña de acceso" type="password" value={clave} onChange={e => { setClave(e.target.value); setError(false); }} onKeyDown={e => e.key === "Enter" && validar()} style={error ? { borderColor: c.danger } : {}} />
-          {error && <p className="f-body text-[11px] flex items-center gap-1" style={{ color: c.danger }}><XCircle size={11} /> Ingresá una contraseña para continuar.</p>}
-          <button onClick={validar} className="f-body w-full py-3 rounded-xl text-sm font-medium" style={{ background: c.accent, color: c.bgAlt }}>Continuar</button>
+          <Input placeholder="Contraseña de acceso" type="password" value={clave} onChange={e => { setClave(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && validar()} style={error ? { borderColor: c.danger } : {}} />
+          {error && <p className="f-body text-[11px] flex items-center gap-1" style={{ color: c.danger }}><XCircle size={11} /> {error}</p>}
+          <button onClick={validar} disabled={cargando} className="f-body w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{cargando && <Spinner size={14} />} Continuar</button>
         </div>
-        <p className="f-body text-[11px] text-center mt-4" style={{ color: c.textFaint }}>Filtro de acceso al apartado — el login real de admin/chofer que sigue después sí valida contra la base de datos.</p>
       </div>
     </div>
   );
@@ -334,6 +413,7 @@ function ChoferPanel({ session, onLogout }) {
   const [pedidos, setPedidos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [confirmandoPago, setConfirmandoPago] = useState(null); // id del pedido al que le estoy pidiendo el método de pago
   const camionColor = colorDeCamion(session.camionId);
 
   const cargar = useCallback(async (mostrarSpinner) => {
@@ -349,9 +429,10 @@ function ChoferPanel({ session, onLogout }) {
   const hoyPend = dia === "hoy" ? pedidos.filter(o => o.estado === "pendiente").length : null;
   const hoyEnt = dia === "hoy" ? pedidos.filter(o => o.estado === "entregado").length : null;
 
-  const marcar = async (id, estado) => {
-    setPedidos(prev => prev.map(o => o.id === id ? { ...o, estado } : o)); // optimista
-    try { await api(`/chofer/pedidos/${id}/estado`, { method: "PATCH", token: session.token, body: { estado } }); }
+  const marcar = async (id, estado, pagoConfirmado) => {
+    setConfirmandoPago(null);
+    setPedidos(prev => prev.map(o => o.id === id ? { ...o, estado, pagoConfirmado: pagoConfirmado || null } : o)); // optimista
+    try { await api(`/chofer/pedidos/${id}/estado`, { method: "PATCH", token: session.token, body: { estado, pagoConfirmado } }); }
     catch (e) { cargar(false); } // si falla, recargo de verdad
   };
 
@@ -375,7 +456,7 @@ function ChoferPanel({ session, onLogout }) {
 
         <div className="flex rounded-xl p-1 mb-4" style={{ background: c.surface }}>
           {Object.entries(DIAS).map(([k, v]) => (
-            <button key={k} onClick={() => setDia(k)} className="f-body flex-1 py-2 rounded-lg text-xs" style={{ background: dia === k ? c.accentSoft : "transparent", color: dia === k ? c.accent : c.textMuted, fontWeight: dia === k ? 600 : 400 }}>{v.label}<span className="block text-[10px] opacity-70">{v.fecha}</span></button>
+            <button key={k} onClick={() => { setDia(k); setConfirmandoPago(null); }} className="f-body flex-1 py-2 rounded-lg text-xs" style={{ background: dia === k ? c.accentSoft : "transparent", color: dia === k ? c.accent : c.textMuted, fontWeight: dia === k ? 600 : 400 }}>{v.label}<span className="block text-[10px] opacity-70">{v.fecha}</span></button>
           ))}
         </div>
 
@@ -395,12 +476,26 @@ function ChoferPanel({ session, onLogout }) {
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 mb-3">
                     {(o.productos || []).map(p => <span key={p} className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>{p}</span>)}
-                    <span className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>{o.pago}</span>
+                    <span className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>Declaró: {o.pago}</span>
+                    {o.total != null && <span className="f-mono text-[11px] px-2 py-0.5 rounded-full ml-auto font-medium" style={{ background: c.accentSoft, color: c.accent }}>${Number(o.total).toLocaleString("es-AR")}</span>}
                   </div>
-                  {dia === "hoy" && o.estado === "pendiente" && (
+                  {o.estado === "entregado" && o.pagoConfirmado && (
+                    <p className="f-body text-[11px] mb-2 flex items-center gap-1" style={{ color: c.success }}><DollarSign size={11} /> Cobrado con: {o.pagoConfirmado}</p>
+                  )}
+
+                  {dia === "hoy" && o.estado === "pendiente" && confirmandoPago !== o.id && (
                     <div className="flex gap-2">
-                      <button onClick={() => marcar(o.id, "entregado")} className="f-body flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1" style={{ background: c.successSoft, color: c.success }}><CheckCircle2 size={13} /> Entregado</button>
+                      <button onClick={() => setConfirmandoPago(o.id)} className="f-body flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1" style={{ background: c.successSoft, color: c.success }}><CheckCircle2 size={13} /> Entregado</button>
                       <button onClick={() => marcar(o.id, "no_atendido")} className="f-body flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1" style={{ background: c.dangerSoft, color: c.danger }}><XCircle size={13} /> No había nadie</button>
+                    </div>
+                  )}
+                  {dia === "hoy" && confirmandoPago === o.id && (
+                    <div className="rounded-xl p-2.5" style={{ background: c.accentSoft }}>
+                      <p className="f-body text-[11px] mb-2" style={{ color: c.text }}>¿Con qué te pagó?</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {PAGOS.map(p => <button key={p} onClick={() => marcar(o.id, "entregado", p)} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium" style={{ background: c.surface, color: c.accent, border: `1px solid ${c.accent}` }}>{p}</button>)}
+                        <button onClick={() => setConfirmandoPago(null)} className="f-body text-xs px-2.5 py-1.5 rounded-lg" style={{ color: c.textFaint }}>Cancelar</button>
+                      </div>
                     </div>
                   )}
                   {dia === "hoy" && o.estado !== "pendiente" && <button onClick={() => marcar(o.id, "pendiente")} className="f-body text-[11px] underline" style={{ color: c.textFaint }}>Revertir a pendiente</button>}
@@ -419,29 +514,44 @@ function ChoferPanel({ session, onLogout }) {
 /* ---------------------------------- ADMIN: DASHBOARD ---------------------------------- */
 function AdminDashboard({ token }) {
   const c = useTheme();
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
   const [d, setD] = useState(null);
   const [error, setError] = useState("");
 
   const cargar = useCallback(async () => {
-    try { setD(await api("/admin/dashboard", { token })); setError(""); }
-    catch (e) { setError("No pudimos cargar el dashboard."); }
-  }, [token]);
+    try {
+      const params = new URLSearchParams();
+      if (desde) params.set("desde", desde);
+      if (hasta) params.set("hasta", hasta);
+      setD(await api(`/admin/dashboard?${params.toString()}`, { token }));
+      setError("");
+    } catch (e) { setError("No pudimos cargar el dashboard."); }
+  }, [token, desde, hasta]);
   useEffect(() => { cargar(); }, [cargar]);
-  useEffect(() => { const t = setInterval(cargar, 10000); return () => clearInterval(t); }, [cargar]);
+  useEffect(() => { const t = setInterval(cargar, 15000); return () => clearInterval(t); }, [cargar]);
 
   if (error) return <ErrorBanner mensaje={error} />;
   if (!d) return <Cargando />;
 
   const porCamion = (d.porCamion || []).map(x => ({ nombre: x.camion.replace("Camión ", ""), pedidos: x.pedidos, color: x.color }));
+  const serie = (d.serieDiaria || []).map(x => ({ ...x, fechaCorta: new Date(x.fecha + "T00:00:00").toLocaleDateString("es-AR", { day: "numeric", month: "short" }) }));
 
   return (
     <div className="space-y-5">
+      <div className="rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-body text-xs" style={{ color: c.textMuted }}>Período del dashboard {!desde && !hasta && "(últimos 30 días por defecto)"}</p>
+        <RangoFechas desde={desde} hasta={hasta} setDesde={setDesde} setHasta={setHasta} />
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Clientes totales", val: d.clientesTotales, color: c.text, Icon: Users },
-          { label: "Pedidos de hoy", val: d.pedidosHoy, color: c.accent, Icon: ClipboardList },
-          { label: "Ingresos del mes", val: `$${(d.ingresosMes / 1000).toFixed(0)}k`, color: c.amber, Icon: TrendingUp },
-          { label: "Entrega efectiva hoy", val: `${d.tasaEntrega}%`, color: c.success, Icon: CheckCircle2 },
+          { label: "Clientes nuevos (período)", val: d.clientesNuevosPeriodo, color: c.accent, Icon: User },
+          { label: "Pedidos del período", val: d.pedidosPeriodo, color: c.text, Icon: ClipboardList },
+          { label: "Pedidos de hoy", val: d.pedidosHoy, color: c.accent, Icon: CalendarClock },
+          { label: "Facturación del período", val: `$${Number(d.ingresosPeriodo).toLocaleString("es-AR")}`, color: c.amber, Icon: TrendingUp },
+          { label: "Entrega efectiva", val: `${d.tasaEntrega}%`, color: c.success, Icon: CheckCircle2 },
         ].map(k => (
           <div key={k.label} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
             <k.Icon size={15} color={c.textFaint} className="mb-2" />
@@ -450,11 +560,33 @@ function AdminDashboard({ token }) {
           </div>
         ))}
       </div>
-      <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-        <p className="f-body text-xs font-medium mb-3 flex items-center gap-1.5" style={{ color: c.textMuted }}><BarChart3 size={13} /> Pedidos de hoy por camión</p>
-        <div style={{ height: 200 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={porCamion}><CartesianGrid strokeDasharray="3 3" stroke={c.borderSoft} vertical={false} /><XAxis dataKey="nombre" tick={{ fill: c.textFaint, fontSize: 11 }} axisLine={{ stroke: c.border }} tickLine={false} /><YAxis tick={{ fill: c.textFaint, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} /><Tooltip contentStyle={{ background: c.bgAlt, border: `1px solid ${c.border}`, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: c.text }} /><Bar dataKey="pedidos" radius={[6, 6, 0, 0]}>{porCamion.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+          <p className="f-body text-xs font-medium mb-3 flex items-center gap-1.5" style={{ color: c.textMuted }}><BarChart3 size={13} /> Pedidos por camión (en el período)</p>
+          <div style={{ height: 200 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={porCamion}><CartesianGrid strokeDasharray="3 3" stroke={c.borderSoft} vertical={false} /><XAxis dataKey="nombre" tick={{ fill: c.textFaint, fontSize: 11 }} axisLine={{ stroke: c.border }} tickLine={false} /><YAxis tick={{ fill: c.textFaint, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} /><Tooltip contentStyle={{ background: c.bgAlt, border: `1px solid ${c.border}`, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: c.text }} /><Bar dataKey="pedidos" radius={[6, 6, 0, 0]}>{porCamion.map((e, i) => <Cell key={i} fill={e.color} />)}</Bar></BarChart></ResponsiveContainer></div>
+        </div>
+        <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+          <p className="f-body text-xs font-medium mb-3 flex items-center gap-1.5" style={{ color: c.textMuted }}><TrendingUp size={13} /> Ingresos por día</p>
+          <div style={{ height: 200 }}><ResponsiveContainer width="100%" height="100%"><LineChart data={serie}><CartesianGrid strokeDasharray="3 3" stroke={c.borderSoft} vertical={false} /><XAxis dataKey="fechaCorta" tick={{ fill: c.textFaint, fontSize: 10 }} axisLine={{ stroke: c.border }} tickLine={false} /><YAxis tick={{ fill: c.textFaint, fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ background: c.bgAlt, border: `1px solid ${c.border}`, borderRadius: 8, fontSize: 12 }} labelStyle={{ color: c.text }} formatter={(v) => [`$${Number(v).toLocaleString("es-AR")}`, "Ingresos"]} /><Line type="monotone" dataKey="ingresos" stroke={c.accent} strokeWidth={2.5} dot={{ fill: c.accent, r: 3 }} /></LineChart></ResponsiveContainer></div>
+        </div>
       </div>
-      <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Se actualiza solo cada 10 segundos. El histórico por rango de fechas es una mejora pendiente (necesita un endpoint nuevo en el backend).</p>
+
+      <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-body text-xs font-medium mb-3 flex items-center gap-1.5" style={{ color: c.textMuted }}><Package size={13} /> Top 5 productos más vendidos (en el período)</p>
+        <div className="space-y-2">
+          {(d.topProductos || []).map((p, i) => (
+            <div key={p.nombre} className="flex items-center gap-3">
+              <span className="f-mono text-xs w-5 shrink-0" style={{ color: c.textFaint }}>#{i + 1}</span>
+              <span className="f-body text-sm flex-1" style={{ color: c.text }}>{p.nombre}</span>
+              <span className="f-mono text-xs shrink-0" style={{ color: c.textMuted }}>{p.cantidad} un.</span>
+              <span className="f-mono text-xs shrink-0 font-medium" style={{ color: c.accent }}>${Number(p.total).toLocaleString("es-AR")}</span>
+            </div>
+          ))}
+          {(!d.topProductos || d.topProductos.length === 0) && <p className="f-body text-xs" style={{ color: c.textFaint }}>Sin ventas en este período.</p>}
+        </div>
+      </div>
+      <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Se actualiza solo cada 15 segundos.</p>
     </div>
   );
 }
@@ -463,6 +595,7 @@ function AdminDashboard({ token }) {
 function AdminPedidos({ token, camiones }) {
   const c = useTheme();
   const [q, setQ] = useState(""); const [fCamion, setFCamion] = useState("todos"); const [fEstado, setFEstado] = useState("todos"); const [fDia, setFDia] = useState("hoy");
+  const [desde, setDesde] = useState(""); const [hasta, setHasta] = useState("");
   const [grupos, setGrupos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -471,7 +604,12 @@ function AdminPedidos({ token, camiones }) {
     if (mostrarSpinner) setCargando(true);
     try {
       const params = new URLSearchParams();
-      if (fDia !== "todos") params.set("dia", fDia);
+      if (desde || hasta) {
+        if (desde) params.set("desde", desde);
+        if (hasta) params.set("hasta", hasta);
+      } else if (fDia !== "todos") {
+        params.set("dia", fDia);
+      }
       if (fCamion !== "todos") params.set("camionId", fCamion);
       if (fEstado !== "todos") params.set("estado", fEstado);
       if (q) params.set("q", q);
@@ -479,7 +617,7 @@ function AdminPedidos({ token, camiones }) {
       setError("");
     } catch (e) { setError("No pudimos cargar los pedidos."); }
     if (mostrarSpinner) setCargando(false);
-  }, [token, fDia, fCamion, fEstado, q]);
+  }, [token, fDia, fCamion, fEstado, q, desde, hasta]);
 
   useEffect(() => { cargar(true); }, [cargar]);
   useEffect(() => { const t = setInterval(() => cargar(false), 10000); return () => clearInterval(t); }, [cargar]);
@@ -497,9 +635,13 @@ function AdminPedidos({ token, camiones }) {
       </div>
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" color={c.textFaint} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar cliente..." className="f-body w-full pl-8 pr-3 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
-        <Select value={fDia} onChange={e => setFDia(e.target.value)}><option value="todos">Todos los días</option><option value="ayer">Ayer</option><option value="hoy">Hoy</option><option value="manana">Mañana</option></Select>
+        <Select value={fDia} onChange={e => setFDia(e.target.value)} disabled={Boolean(desde || hasta)}><option value="todos">Todos los días</option><option value="ayer">Ayer</option><option value="hoy">Hoy</option><option value="manana">Mañana</option></Select>
         <Select value={fCamion} onChange={e => setFCamion(e.target.value)}><option value="todos">Todos los camiones</option>{camiones.map(cm => <option key={cm.id} value={cm.id}>{cm.nombre}</option>)}</Select>
         <Select value={fEstado} onChange={e => setFEstado(e.target.value)}><option value="todos">Todos los estados</option><option value="pendiente">Pendiente</option><option value="entregado">Entregado</option><option value="no_atendido">No había nadie</option></Select>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="f-body text-[11px]" style={{ color: c.textFaint }}>O por rango de fechas (anula el filtro de día):</span>
+        <RangoFechas desde={desde} hasta={hasta} setDesde={setDesde} setHasta={setHasta} />
       </div>
 
       <ErrorBanner mensaje={error} />
@@ -515,14 +657,16 @@ function AdminPedidos({ token, camiones }) {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full f-body text-xs">
-                    <thead><tr>{["Parada", "Cliente", "Barrio", "Día", "Camión", "Estado"].map(h => <th key={h} className="text-left px-4 py-2 font-medium" style={{ color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{h}</th>)}</tr></thead>
+                    <thead><tr>{["Parada", "Cliente", "Barrio", "Día", "Pago", "Total", "Camión", "Estado"].map(h => <th key={h} className="text-left px-4 py-2 font-medium whitespace-nowrap" style={{ color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {items.map(o => (
                         <tr key={o.id} style={{ borderTop: `1px solid ${c.borderSoft}` }}>
                           <td className="px-4 py-2.5"><span className="f-mono text-[11px] w-5 h-5 rounded-full inline-flex items-center justify-center" style={{ background: `${cm.color}22`, color: cm.color }}>{o.parada}</span></td>
                           <td className="px-4 py-2.5" style={{ color: c.text }}>{o.cliente}</td>
                           <td className="px-4 py-2.5" style={{ color: c.textMuted }}>{o.barrio}</td>
-                          <td className="px-4 py-2.5" style={{ color: c.textMuted }}>{new Date(o.fechaEntrega).toLocaleDateString("es-AR")}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{new Date(o.fechaEntrega).toLocaleDateString("es-AR")}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{o.pagoConfirmado ? <span style={{ color: c.success }}>{o.pagoConfirmado} ✓</span> : (o.pago || "—")}</td>
+                          <td className="f-mono px-4 py-2.5" style={{ color: c.accent }}>${Number(o.total || 0).toLocaleString("es-AR")}</td>
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-1.5">
                               <select value={o.camionId} onChange={e => reasignar(o.id, e.target.value)} className="f-body text-[11px] rounded-md px-1.5 py-1 outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: camiones.find(x => x.id === o.camionId)?.color }}>
@@ -570,8 +714,11 @@ function AdminClientes({ token }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" color={c.textFaint} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre..." className="f-body w-full pl-8 pr-3 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
-        <div className="flex items-center gap-1.5"><span className="f-body text-[11px]" style={{ color: c.textFaint }}>Último pedido</span><input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="f-body text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>a</span><input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="f-body text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
         <button onClick={() => setOrden(orden === "desc" ? "asc" : "desc")} className="f-body flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted, border: `1px solid ${c.border}` }}><ArrowUpDown size={12} /> Consumo</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="f-body text-[11px]" style={{ color: c.textFaint }}>Rango de último pedido:</span>
+        <RangoFechas desde={desde} hasta={hasta} setDesde={setDesde} setHasta={setHasta} />
       </div>
       <ErrorBanner mensaje={error} />
       {cargando ? <Cargando /> : (
@@ -602,13 +749,36 @@ function AdminClientes({ token }) {
   );
 }
 
-/* ---------------------------------- ADMIN: CATÁLOGO ---------------------------------- */
+/* ---------------------------------- ADMIN: CATÁLOGO (2 catálogos separados) ---------------------------------- */
+function ListaProductos({ productos, onEditarPrecio, onToggleActivo, onEliminar }) {
+  const c = useTheme();
+  return (
+    <div className="space-y-2">
+      {productos.map(p => (
+        <div key={p.id} className="rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: p.activo ? 1 : 0.5 }}>
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}><Package size={16} color={c.accent} /></div>
+            <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-[11px]" style={{ color: c.textFaint }}>{p.descripcion || "—"}</p></div>
+          </div>
+          <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
+            <div className="flex items-center gap-1"><span className="f-mono text-xs" style={{ color: c.textFaint }}>$</span><input type="number" defaultValue={p.precio} onBlur={e => onEditarPrecio(p.id, e.target.value)} className="f-mono text-xs w-20 px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
+            <button onClick={() => onToggleActivo(p.id, p.activo)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap" style={{ background: p.activo ? c.successSoft : c.dangerSoft, color: p.activo ? c.success : c.danger }}>{p.activo ? "Activo" : "Oculto"}</button>
+            <button onClick={() => onEliminar(p.id)} className="p-1.5 rounded-lg" style={{ background: c.dangerSoft }} title="Eliminar"><Trash2 size={13} color={c.danger} /></button>
+          </div>
+        </div>
+      ))}
+      {productos.length === 0 && <p className="f-body text-xs py-4" style={{ color: c.textFaint }}>Sin productos en esta categoría todavía.</p>}
+    </div>
+  );
+}
+
 function AdminCatalogo({ token }) {
   const c = useTheme();
   const [productos, setProductos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
-  const [nuevo, setNuevo] = useState({ nombre: "", precio: "" });
+  const [tab, setTab] = useState("hogar");
+  const [nuevo, setNuevo] = useState({ nombre: "", precio: "", descripcion: "" });
 
   const cargar = useCallback(() => api("/admin/productos", { token }).then(setProductos).catch(() => setError("No pudimos cargar el catálogo.")).finally(() => setCargando(false)), [token]);
   useEffect(() => { cargar(); }, [cargar]);
@@ -621,35 +791,36 @@ function AdminCatalogo({ token }) {
     setProductos(prev => prev.map(p => p.id === id ? { ...p, activo: !activo } : p));
     try { await api(`/admin/productos/${id}`, { method: "PATCH", token, body: { activo: !activo } }); } catch { cargar(); }
   };
+  const eliminar = async (id) => {
+    try { await api(`/admin/productos/${id}`, { method: "DELETE", token }); cargar(); }
+    catch (e) { setError(e.message || "No se pudo eliminar."); }
+  };
   const agregar = async () => {
     if (!nuevo.nombre || !nuevo.precio) return;
-    try { await api("/admin/productos", { method: "POST", token, body: { nombre: nuevo.nombre, descripcion: "", precio: Number(nuevo.precio) } }); setNuevo({ nombre: "", precio: "" }); cargar(); }
-    catch (e) { setError("No se pudo crear el producto."); }
+    try { await api("/admin/productos", { method: "POST", token, body: { nombre: nuevo.nombre, descripcion: nuevo.descripcion, precio: Number(nuevo.precio), categoria: tab } }); setNuevo({ nombre: "", precio: "", descripcion: "" }); cargar(); }
+    catch (e) { setError(e.message || "No se pudo crear el producto."); }
   };
 
   if (cargando) return <Cargando />;
+  const delTab = productos.filter(p => p.categoria === tab);
+
   return (
     <div className="space-y-4">
-      <p className="f-body text-xs" style={{ color: c.textMuted }}>Estos son los productos que ve el cliente en la vidriera al hacer su pedido.</p>
-      <ErrorBanner mensaje={error} />
-      <div className="space-y-2">
-        {productos.map(p => (
-          <div key={p.id} className="rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: p.activo ? 1 : 0.5 }}>
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}><Package size={16} color={c.accent} /></div>
-              <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-[11px]" style={{ color: c.textFaint }}>{p.descripcion || "—"}</p></div>
-            </div>
-            <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
-              <div className="flex items-center gap-1"><span className="f-mono text-xs" style={{ color: c.textFaint }}>$</span><input type="number" defaultValue={p.precio} onBlur={e => editarPrecio(p.id, e.target.value)} className="f-mono text-xs w-20 px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
-              <button onClick={() => toggleActivo(p.id, p.activo)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap" style={{ background: p.activo ? c.successSoft : c.dangerSoft, color: p.activo ? c.success : c.danger }}>{p.activo ? "Activo" : "Oculto"}</button>
-            </div>
-          </div>
-        ))}
+      <p className="f-body text-xs" style={{ color: c.textMuted }}>Cada catálogo se ve por separado en la vidriera, según lo que el cliente elija al empezar su pedido.</p>
+      <div className="flex rounded-xl p-1" style={{ background: c.surface, width: "fit-content" }}>
+        <button onClick={() => setTab("hogar")} className="f-body px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === "hogar" ? c.accentSoft : "transparent", color: tab === "hogar" ? c.accent : c.textMuted }}><Home size={13} /> Hogar</button>
+        <button onClick={() => setTab("oficina_revendedor")} className="f-body px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === "oficina_revendedor" ? c.accentSoft : "transparent", color: tab === "oficina_revendedor" ? c.accent : c.textMuted }}><Briefcase size={13} /> Oficina y Revendedor</button>
       </div>
-      <div className="rounded-2xl p-3.5 flex flex-col sm:flex-row gap-2" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
-        <Input placeholder="Nombre del producto" value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} className="flex-1" />
+      <ErrorBanner mensaje={error} />
+
+      <ListaProductos productos={delTab} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} />
+
+      <div className="rounded-2xl p-3.5 flex flex-col gap-2" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
+        <p className="f-body text-xs font-medium" style={{ color: c.textMuted }}>Agregar producto a {tab === "hogar" ? "Hogar" : "Oficina y Revendedor"}</p>
+        <Input placeholder="Nombre del producto" value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} />
+        <Input placeholder="Descripción (opcional)" value={nuevo.descripcion} onChange={e => setNuevo({ ...nuevo, descripcion: e.target.value })} />
         <div className="flex gap-2">
-          <input type="number" placeholder="Precio" value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} className="f-body flex-1 sm:w-24 px-3 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+          <input type="number" placeholder="Precio" value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} className="f-body flex-1 px-3 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
           <button onClick={agregar} className="f-body px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center gap-1 shrink-0" style={{ background: c.accent, color: c.bgAlt }}><Plus size={14} /> Agregar</button>
         </div>
       </div>
@@ -658,17 +829,25 @@ function AdminCatalogo({ token }) {
 }
 
 /* ---------------------------------- ADMIN: CAMIONES ---------------------------------- */
-function CamionCard({ cm, zonas, todosLosCamiones, onGuardar, onAsignarZona, onQuitarZona }) {
+function CamionCard({ cm, zonas, onGuardar, onEliminar, onAsignarZona, onQuitarZona }) {
   const c = useTheme();
   const [editando, setEditando] = useState(false);
   const [nombre, setNombre] = useState(cm.nombre);
   const [choferNombre, setChoferNombre] = useState(cm.chofer?.nombre || "");
+  const [choferUsuario, setChoferUsuario] = useState(cm.chofer?.usuario || "");
+  const [choferPassword, setChoferPassword] = useState("");
 
   const misZonas = zonas.filter(z => z.camionId === cm.id);
   const disponibles = zonas.filter(z => z.camionId !== cm.id).map(z => ({ id: z.id, label: z.camionId ? `${z.barrio} — ya en ${z.camionNombre}` : z.barrio }));
 
-  const guardar = () => { onGuardar(cm.id, { nombre: nombre.trim(), choferNombre: choferNombre.trim() }); setEditando(false); };
-  const cancelar = () => { setNombre(cm.nombre); setChoferNombre(cm.chofer?.nombre || ""); setEditando(false); };
+  const guardar = () => {
+    const cambios = { nombre: nombre.trim(), choferNombre: choferNombre.trim(), choferUsuario: choferUsuario.trim() };
+    if (choferPassword.trim()) cambios.choferPassword = choferPassword.trim();
+    onGuardar(cm.id, cambios);
+    setChoferPassword("");
+    setEditando(false);
+  };
+  const cancelar = () => { setNombre(cm.nombre); setChoferNombre(cm.chofer?.nombre || ""); setChoferUsuario(cm.chofer?.usuario || ""); setChoferPassword(""); setEditando(false); };
 
   return (
     <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
@@ -684,10 +863,23 @@ function CamionCard({ cm, zonas, todosLosCamiones, onGuardar, onAsignarZona, onQ
             <div><p className="f-body text-sm font-medium truncate" style={{ color: c.text }}>{cm.nombre}</p><p className="f-body text-[11px] truncate" style={{ color: c.textFaint }}>{cm.chofer?.nombre || "Sin chofer"}</p></div>
           )}
         </div>
-        {!editando && <button onClick={() => setEditando(true)} className="p-1.5 rounded-lg shrink-0" style={{ background: c.surfaceAlt }}><Pencil size={13} color={c.textMuted} /></button>}
+        {!editando && (
+          <div className="flex gap-1 shrink-0">
+            <button onClick={() => setEditando(true)} className="p-1.5 rounded-lg" style={{ background: c.surfaceAlt }}><Pencil size={13} color={c.textMuted} /></button>
+            <button onClick={() => onEliminar(cm.id)} className="p-1.5 rounded-lg" style={{ background: c.dangerSoft }} title="Eliminar camión"><Trash2 size={13} color={c.danger} /></button>
+          </div>
+        )}
       </div>
 
-      {cm.chofer && <p className="f-mono text-[11px] mb-3 px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted }}>usuario: {cm.chofer.usuario}</p>}
+      {editando ? (
+        <div className="space-y-1.5 mb-3 p-2.5 rounded-lg" style={{ background: c.surfaceAlt }}>
+          <p className="f-body text-[11px] flex items-center gap-1" style={{ color: c.textFaint }}><KeyRound size={11} /> Acceso del chofer</p>
+          <input value={choferUsuario} onChange={e => setChoferUsuario(e.target.value)} placeholder="Usuario" className="f-body w-full text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+          <input value={choferPassword} onChange={e => setChoferPassword(e.target.value)} placeholder="Nueva contraseña (dejar vacío para no cambiarla)" type="password" className="f-body w-full text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+        </div>
+      ) : (
+        cm.chofer && <p className="f-mono text-[11px] mb-3 px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted }}>usuario: {cm.chofer.usuario}</p>
+      )}
 
       <p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Zonas / barrios que cubre</p>
       <div className="flex flex-wrap gap-1.5 mb-2">
@@ -704,12 +896,12 @@ function CamionCard({ cm, zonas, todosLosCamiones, onGuardar, onAsignarZona, onQ
         {disponibles.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
       </select>
 
-      {editando ? (
+      {editando && (
         <div className="flex gap-2">
           <button onClick={guardar} className="f-body flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1" style={{ background: c.successSoft, color: c.success }}><Save size={12} /> Guardar</button>
           <button onClick={cancelar} className="f-body flex-1 py-2 rounded-lg text-xs" style={{ background: c.surfaceAlt, color: c.textMuted }}>Cancelar</button>
         </div>
-      ) : <div style={{ height: 1 }} />}
+      )}
     </div>
   );
 }
@@ -768,7 +960,11 @@ function AdminCamiones({ token }) {
 
   const zonas = zonasRaw.map(z => ({ ...z, color: z.camionId ? camiones.find(cm => cm.id === z.camionId)?.color : null }));
 
-  const guardarCamion = async (id, cambios) => { try { await api(`/admin/camiones/${id}`, { method: "PATCH", token, body: cambios }); cargar(false); } catch { setError("No se pudo guardar el camión."); } };
+  const guardarCamion = async (id, cambios) => { try { await api(`/admin/camiones/${id}`, { method: "PATCH", token, body: cambios }); cargar(false); } catch (e) { setError(e.message || "No se pudo guardar el camión."); } };
+  const eliminarCamion = async (id) => {
+    if (!window.confirm("¿Eliminar este camión? Solo se puede si no tiene pedidos en su historial.")) return;
+    try { await api(`/admin/camiones/${id}`, { method: "DELETE", token }); cargar(false); } catch (e) { setError(e.message || "No se pudo eliminar el camión."); }
+  };
   const asignarZona = async (zonaId, camionId) => { try { await api(`/admin/zonas/${zonaId}/camion`, { method: "PATCH", token, body: { camionId } }); cargar(false); } catch { setError("No se pudo asignar la zona."); } };
   const quitarZona = async (zonaId) => { try { await api(`/admin/zonas/${zonaId}/camion`, { method: "PATCH", token, body: { camionId: null } }); cargar(false); } catch { setError("No se pudo soltar la zona."); } };
   const agregarZona = async (barrio) => { try { await api("/admin/zonas", { method: "POST", token, body: { barrio } }); cargar(false); } catch (e) { setError(e.message || "No se pudo crear la zona."); } };
@@ -786,14 +982,14 @@ function AdminCamiones({ token }) {
     <div className="space-y-4">
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}>
         <MapPin size={14} color={c.accent} />
-        <p className="f-body text-xs" style={{ color: c.text }}>Las zonas de cada camión son editables. La asignación automática de pedidos se actualiza al instante.</p>
+        <p className="f-body text-xs" style={{ color: c.text }}>Zonas, nombre y credenciales de cada camión son editables. La asignación automática de pedidos se actualiza al instante.</p>
       </div>
       <ErrorBanner mensaje={error} />
 
       <ZonasOperativas zonas={zonas} onAgregar={agregarZona} onRenombrar={renombrarZona} onEliminar={eliminarZona} />
 
       <div className="grid sm:grid-cols-2 gap-3">
-        {camiones.map(cm => <CamionCard key={cm.id} cm={cm} zonas={zonas} todosLosCamiones={camiones} onGuardar={guardarCamion} onAsignarZona={asignarZona} onQuitarZona={quitarZona} />)}
+        {camiones.map(cm => <CamionCard key={cm.id} cm={cm} zonas={zonas} onGuardar={guardarCamion} onEliminar={eliminarCamion} onAsignarZona={asignarZona} onQuitarZona={quitarZona} />)}
       </div>
 
       <div className="rounded-2xl p-3.5" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
@@ -813,11 +1009,86 @@ function AdminCamiones({ token }) {
   );
 }
 
+/* ---------------------------------- ADMIN: MI CUENTA Y CONFIGURACIÓN ---------------------------------- */
+function AdminConfiguracion({ token, onNombreActualizado }) {
+  const c = useTheme();
+  const [perfil, setPerfil] = useState(null);
+  const [nombre, setNombre] = useState(""); const [usuario, setUsuario] = useState("");
+  const [passActual, setPassActual] = useState(""); const [passNueva, setPassNueva] = useState("");
+  const [guardandoPerfil, setGuardandoPerfil] = useState(false);
+  const [okPerfil, setOkPerfil] = useState(""); const [errorPerfil, setErrorPerfil] = useState("");
+
+  const [areaPrivadaConfigurada, setAreaPrivadaConfigurada] = useState(false);
+  const [claveArea, setClaveArea] = useState("");
+  const [guardandoArea, setGuardandoArea] = useState(false);
+  const [okArea, setOkArea] = useState(""); const [errorArea, setErrorArea] = useState("");
+
+  useEffect(() => {
+    api("/admin/perfil", { token }).then(p => { setPerfil(p); setNombre(p.nombre); setUsuario(p.usuario); });
+    api("/admin/configuracion", { token }).then(d => setAreaPrivadaConfigurada(d.areaPrivadaConfigurada));
+  }, [token]);
+
+  const guardarPerfil = async () => {
+    setGuardandoPerfil(true); setOkPerfil(""); setErrorPerfil("");
+    try {
+      const body = { nombre, usuario };
+      if (passNueva) { body.passwordActual = passActual; body.passwordNueva = passNueva; }
+      const actualizado = await api("/admin/perfil", { method: "PATCH", token, body });
+      setOkPerfil("Guardado."); setPassActual(""); setPassNueva("");
+      onNombreActualizado && onNombreActualizado(actualizado.nombre);
+    } catch (e) { setErrorPerfil(e.message || "No se pudo guardar."); }
+    setGuardandoPerfil(false);
+  };
+
+  const guardarArea = async () => {
+    setGuardandoArea(true); setOkArea(""); setErrorArea("");
+    try {
+      const d = await api("/admin/configuracion", { method: "PATCH", token, body: { claveAreaPrivada: claveArea } });
+      setAreaPrivadaConfigurada(d.areaPrivadaConfigurada); setClaveArea(""); setOkArea("Guardado.");
+    } catch (e) { setErrorArea(e.message || "No se pudo guardar."); }
+    setGuardandoArea(false);
+  };
+
+  if (!perfil) return <Cargando />;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-body text-sm font-medium mb-1 flex items-center gap-1.5" style={{ color: c.text }}><User size={14} /> Mi cuenta</p>
+        <p className="f-body text-[11px] mb-3" style={{ color: c.textFaint }}>Tu nombre, usuario y contraseña de acceso al panel admin.</p>
+        <div className="space-y-2.5 max-w-sm">
+          <Input placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} />
+          <Input placeholder="Usuario" value={usuario} onChange={e => setUsuario(e.target.value)} />
+          <div className="h-px my-1" style={{ background: c.border }} />
+          <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Para cambiar la contraseña, completá los dos campos:</p>
+          <Input placeholder="Contraseña actual" type="password" value={passActual} onChange={e => setPassActual(e.target.value)} />
+          <Input placeholder="Contraseña nueva" type="password" value={passNueva} onChange={e => setPassNueva(e.target.value)} />
+          {errorPerfil && <p className="f-body text-[11px]" style={{ color: c.danger }}>{errorPerfil}</p>}
+          {okPerfil && <p className="f-body text-[11px]" style={{ color: c.success }}>{okPerfil}</p>}
+          <button onClick={guardarPerfil} disabled={guardandoPerfil} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{guardandoPerfil && <Spinner size={13} />} Guardar cambios</button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-body text-sm font-medium mb-1 flex items-center gap-1.5" style={{ color: c.text }}><Lock size={14} /> Clave del Área Privada</p>
+        <p className="f-body text-[11px] mb-3" style={{ color: c.textFaint }}>Es el primer candado que se ve al tocar "Acceso interno" en la vidriera, antes del login real. {areaPrivadaConfigurada ? "Ahora mismo hay una clave configurada." : "Ahora mismo NO hay clave configurada — cualquiera puede pasar ese primer paso."}</p>
+        <div className="flex flex-wrap gap-2 max-w-sm">
+          <Input placeholder="Nueva clave (dejar vacío para desactivarla)" type="password" value={claveArea} onChange={e => setClaveArea(e.target.value)} />
+          <button onClick={guardarArea} disabled={guardandoArea} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 disabled:opacity-70 shrink-0" style={{ background: c.accent, color: c.bgAlt }}>{guardandoArea && <Spinner size={13} />} Guardar</button>
+        </div>
+        {errorArea && <p className="f-body text-[11px] mt-1.5" style={{ color: c.danger }}>{errorArea}</p>}
+        {okArea && <p className="f-body text-[11px] mt-1.5" style={{ color: c.success }}>{okArea}</p>}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------------------------- ADMIN PANEL (sidebar) ---------------------------------- */
 function AdminPanel({ session, onLogout, modo, setModo }) {
   const c = useTheme();
   const [view, setView] = useState("dashboard");
   const [camiones, setCamiones] = useState([]);
+  const [nombreAdmin, setNombreAdmin] = useState(session.nombre);
 
   useEffect(() => { api("/admin/camiones", { token: session.token }).then(setCamiones).catch(() => {}); }, [session.token, view]);
 
@@ -827,14 +1098,15 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
     { id: "clientes", label: "Clientes", Icon: Users },
     { id: "catalogo", label: "Catálogo", Icon: Boxes },
     { id: "camiones", label: "Camiones", Icon: Truck },
+    { id: "configuracion", label: "Mi cuenta", Icon: Settings },
   ];
-  const titles = { dashboard: "Dashboard general", pedidos: "Pedidos", clientes: "Base de clientes", catalogo: "Catálogo de productos", camiones: "Camiones y zonas" };
+  const titles = { dashboard: "Dashboard general", pedidos: "Pedidos", clientes: "Base de clientes", catalogo: "Catálogo de productos", camiones: "Camiones y zonas", configuracion: "Mi cuenta y configuración" };
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row" style={{ background: c.bg }}>
       <div className="hidden md:flex w-56 shrink-0 flex-col" style={{ background: c.bgAlt, borderRight: `1px solid ${c.borderSoft}` }}>
         <div className="flex items-center gap-2 px-4 py-4"><div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: c.accent }}><Droplet size={14} color={c.bgAlt} fill={c.bgAlt} /></div><span className="f-display text-sm font-semibold" style={{ color: c.text }}>La Hilda</span></div>
-        <p className="f-body text-[11px] px-4 mb-2" style={{ color: c.textFaint }}>{session.nombre}</p>
+        <p className="f-body text-[11px] px-4 mb-2" style={{ color: c.textFaint }}>{nombreAdmin}</p>
         <nav className="flex-1 px-2 space-y-0.5">
           {NAV.map(n => (
             <button key={n.id} onClick={() => setView(n.id)} className="f-body w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors" style={{ background: view === n.id ? c.accentSoft : "transparent", color: view === n.id ? c.accent : c.textMuted }}>
@@ -871,6 +1143,7 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
           {view === "clientes" && <AdminClientes token={session.token} />}
           {view === "catalogo" && <AdminCatalogo token={session.token} />}
           {view === "camiones" && <AdminCamiones token={session.token} />}
+          {view === "configuracion" && <AdminConfiguracion token={session.token} onNombreActualizado={setNombreAdmin} />}
         </div>
       </div>
     </div>
