@@ -138,7 +138,7 @@ function SystemFooter() {
   return (
     <footer className="shrink-0 px-4 py-3" style={{ background: c.bgAlt, borderTop: `1px solid ${c.borderSoft}` }}>
       <a
-        href="https://glidex.ar"
+        href="https://www.glidex.com.ar"
         target="_blank"
         rel="noopener noreferrer"
         className="f-body mx-auto flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-[11px] transition-opacity hover:opacity-100"
