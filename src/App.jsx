@@ -75,6 +75,16 @@ const OPCIONES_SEGMENTO = [
 ];
 const TIPO_DESTINO_POR_SEGMENTO = { hogar: "casa", oficina: "oficina", revendedor: "empresa" };
 function fmtDate(d) { return d.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "short", day: "numeric", month: "short" }); }
+function formatearFechaEntrega(fecha) {
+  if (!fecha) return "próximo día hábil";
+  const texto = new Date(fecha).toLocaleDateString("es-AR", {
+    timeZone: "UTC",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
 function crearDias(referencia = new Date()) {
   const desplazada = dias => new Date(referencia.getTime() + dias * 24 * 60 * 60 * 1000);
   return {
@@ -220,17 +230,24 @@ function ClientePortal({ onAccesoInterno }) {
   const [form, setForm] = useState({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo" });
   const [confirmado, setConfirmado] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  const [fechaEstimada, setFechaEstimada] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const [prods, zs] = await Promise.all([api("/public/productos"), api("/public/zonas")]);
+        const [prods, zs, proxima] = await Promise.all([api("/public/productos"), api("/public/zonas"), api("/public/proxima-entrega")]);
         setProductos(prods);
         setZonas(zs.map(z => ({ barrio: z.barrio, camionId: z.camionId, nombre: z.camionNombre, color: colorDeCamion(z.camionId) })));
+        setFechaEstimada(proxima.fechaEntrega);
       } catch (e) { setError("No pudimos cargar el catálogo. Refrescá la página."); }
       setCargando(false);
     })();
   }, []);
+
+  useEffect(() => {
+    if (step !== 3) return;
+    api("/public/proxima-entrega").then(data => setFechaEstimada(data.fechaEntrega)).catch(() => {});
+  }, [step]);
 
   const productosDelSegmento = productos.filter(p => !segmento || p.categoria === segmento.categoria);
   const totalItems = Object.values(cant).reduce((a, b) => a + b, 0);
@@ -275,7 +292,7 @@ function ClientePortal({ onAccesoInterno }) {
             <div className="rounded-2xl p-5 text-left space-y-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
               <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Cliente</span><span style={{ color: c.text }}>{form.nombre || "—"}</span></div>
               <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Dirección</span><span style={{ color: c.text }}>{form.calle}, {form.barrio}</span></div>
-              <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Entrega</span><span style={{ color: c.text }}>{new Date(confirmado.fechaEntrega).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}</span></div>
+              <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Entrega</span><span style={{ color: c.text }}>{formatearFechaEntrega(confirmado.fechaEntrega)}</span></div>
               <div className="flex justify-between f-body text-sm items-center"><span style={{ color: c.textMuted }}>Camión asignado</span><CamionChip camion={camionAsignado} small /></div>
               <div className="h-px" style={{ background: c.border }} />
               <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
@@ -351,7 +368,7 @@ function ClientePortal({ onAccesoInterno }) {
                   <div className="h-px my-1" style={{ background: c.border }} />
                   <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span></div>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><CalendarClock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>Entrega estimada: <b>próximo día hábil</b> (nunca sábados ni domingos) con {camionAsignado?.nombre}</span></div>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><CalendarClock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>Entrega estimada: <b>{formatearFechaEntrega(fechaEstimada)}</b> con {camionAsignado?.nombre}</span></div>
                 <div className="flex gap-2"><button onClick={() => setStep(2)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={enviando} onClick={confirmar} className="f-body flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{enviando && <Spinner size={14} />} Confirmar pedido</button></div>
               </div>
             )}
