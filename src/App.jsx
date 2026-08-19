@@ -9,7 +9,7 @@ import {
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
 /* ---------------------------------- API ---------------------------------- */
-const API_BASE = "https://hilda-production.up.railway.app";
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 
 async function api(path, { method = "GET", body, token } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
