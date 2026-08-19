@@ -74,10 +74,15 @@ const OPCIONES_SEGMENTO = [
   { id: "revendedor", label: "Revendedor", categoria: "oficina_revendedor", Icon: Store, desc: "Compra por mayor" },
 ];
 const TIPO_DESTINO_POR_SEGMENTO = { hogar: "casa", oficina: "oficina", revendedor: "empresa" };
-function fmtDate(d) { return d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" }); }
-const HOY = new Date(), AYER = new Date(HOY), MANANA = new Date(HOY);
-AYER.setDate(HOY.getDate() - 1); MANANA.setDate(HOY.getDate() + 1);
-const DIAS = { ayer: { label: "Ayer", fecha: fmtDate(AYER) }, hoy: { label: "Hoy", fecha: fmtDate(HOY) }, manana: { label: "Mañana", fecha: fmtDate(MANANA) } };
+function fmtDate(d) { return d.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "short", day: "numeric", month: "short" }); }
+function crearDias(referencia = new Date()) {
+  const desplazada = dias => new Date(referencia.getTime() + dias * 24 * 60 * 60 * 1000);
+  return {
+    ayer: { label: "Ayer", fecha: fmtDate(desplazada(-1)) },
+    hoy: { label: "Hoy", fecha: fmtDate(referencia) },
+    manana: { label: "Mañana", fecha: fmtDate(desplazada(1)) },
+  };
+}
 function isoDate(d) { return d.toISOString().slice(0, 10); }
 
 /* ---------------------------------- HELPERS UI ---------------------------------- */
@@ -449,11 +454,13 @@ function LoginGate({ onLogin, onVolver }) {
 function ChoferPanel({ session, onLogout }) {
   const c = useTheme();
   const [dia, setDia] = useState("hoy");
+  const [dias, setDias] = useState(() => crearDias());
   const [pedidos, setPedidos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [confirmandoPago, setConfirmandoPago] = useState(null); // id del pedido al que le estoy pidiendo el método de pago
   const camionColor = colorDeCamion(session.camionId);
+  const diaEditable = dia !== "manana";
 
   const cargar = useCallback(async (mostrarSpinner) => {
     if (mostrarSpinner) setCargando(true);
@@ -464,6 +471,11 @@ function ChoferPanel({ session, onLogout }) {
 
   useEffect(() => { cargar(true); }, [cargar]);
   useEffect(() => { const t = setInterval(() => cargar(false), 8000); return () => clearInterval(t); }, [cargar]);
+  useEffect(() => {
+    const actualizarFechas = () => setDias(crearDias());
+    const t = setInterval(actualizarFechas, 60000);
+    return () => clearInterval(t);
+  }, []);
 
   const hoyPend = dia === "hoy" ? pedidos.filter(o => o.estado === "pendiente").length : null;
   const hoyEnt = dia === "hoy" ? pedidos.filter(o => o.estado === "entregado").length : null;
@@ -472,7 +484,7 @@ function ChoferPanel({ session, onLogout }) {
     setConfirmandoPago(null);
     setPedidos(prev => prev.map(o => o.id === id ? { ...o, estado, pagoConfirmado: pagoConfirmado || null } : o)); // optimista
     try { await api(`/chofer/pedidos/${id}/estado`, { method: "PATCH", token: session.token, body: { estado, pagoConfirmado } }); }
-    catch (e) { cargar(false); } // si falla, recargo de verdad
+    catch (e) { setError(e.message || "No pudimos actualizar el pedido."); cargar(false); } // si falla, recargo de verdad
   };
 
   return (
@@ -494,10 +506,14 @@ function ChoferPanel({ session, onLogout }) {
         )}
 
         <div className="flex rounded-xl p-1 mb-4" style={{ background: c.surface }}>
-          {Object.entries(DIAS).map(([k, v]) => (
+          {Object.entries(dias).map(([k, v]) => (
             <button key={k} onClick={() => { setDia(k); setConfirmandoPago(null); }} className="f-body flex-1 py-2 rounded-lg text-xs" style={{ background: dia === k ? c.accentSoft : "transparent", color: dia === k ? c.accent : c.textMuted, fontWeight: dia === k ? 600 : 400 }}>{v.label}<span className="block text-[10px] opacity-70">{v.fecha}</span></button>
           ))}
         </div>
+
+        {dia === "ayer" && pedidos.some(o => o.estado === "pendiente") && (
+          <p className="f-body text-[11px] mb-3 px-3 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.amber }}>Los pendientes de ayer todavía se pueden completar.</p>
+        )}
 
         <ErrorBanner mensaje={error} />
         {cargando ? <Cargando /> : (
@@ -522,13 +538,13 @@ function ChoferPanel({ session, onLogout }) {
                     <p className="f-body text-[11px] mb-2 flex items-center gap-1" style={{ color: c.success }}><DollarSign size={11} /> Cobrado con: {o.pagoConfirmado}</p>
                   )}
 
-                  {dia === "hoy" && o.estado === "pendiente" && confirmandoPago !== o.id && (
+                  {diaEditable && o.estado === "pendiente" && confirmandoPago !== o.id && (
                     <div className="flex gap-2">
                       <button onClick={() => setConfirmandoPago(o.id)} className="f-body flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1" style={{ background: c.successSoft, color: c.success }}><CheckCircle2 size={13} /> Entregado</button>
                       <button onClick={() => marcar(o.id, "no_atendido")} className="f-body flex-1 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1" style={{ background: c.dangerSoft, color: c.danger }}><XCircle size={13} /> No había nadie</button>
                     </div>
                   )}
-                  {dia === "hoy" && confirmandoPago === o.id && (
+                  {diaEditable && confirmandoPago === o.id && (
                     <div className="rounded-xl p-2.5" style={{ background: c.accentSoft }}>
                       <p className="f-body text-[11px] mb-2" style={{ color: c.text }}>¿Con qué te pagó?</p>
                       <div className="flex flex-wrap gap-1.5">
@@ -537,7 +553,7 @@ function ChoferPanel({ session, onLogout }) {
                       </div>
                     </div>
                   )}
-                  {dia === "hoy" && o.estado !== "pendiente" && <button onClick={() => marcar(o.id, "pendiente")} className="f-body text-[11px] underline" style={{ color: c.textFaint }}>Revertir a pendiente</button>}
+                  {diaEditable && o.estado !== "pendiente" && <button onClick={() => marcar(o.id, "pendiente")} className="f-body text-[11px] underline" style={{ color: c.textFaint }}>Revertir a pendiente</button>}
                   {dia === "manana" && <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Programado — todavía no se puede marcar</p>}
                 </div>
               ))}
