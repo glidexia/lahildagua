@@ -12,6 +12,8 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, Cart
 const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 const ERROR_GLOBAL_EVENT = "lahilda:error";
 const CONFIRM_GLOBAL_EVENT = "lahilda:confirmar";
+const AUTH_EXPIRED_EVENT = "lahilda:sesion-vencida";
+const AUTH_SESSION_KEY = "lahilda:sesion";
 let ultimoErrorGlobal = { mensaje: "", momento: 0 };
 
 function mostrarErrorGlobal(mensaje) {
@@ -60,6 +62,9 @@ async function api(path, { method = "GET", body, token } = {}) {
   try { data = await res.json(); } catch {}
   if (!res.ok) {
     const mensaje = mensajeAmigableApi(res.status, data, path);
+    if (res.status === 401 && !path.includes("/auth/")) {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    }
     mostrarErrorGlobal(mensaje);
     throw new Error(mensaje);
   }
@@ -70,6 +75,25 @@ function decodeJwt(token) {
     const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
     return JSON.parse(decodeURIComponent(atob(b64).split("").map(ch => "%" + ch.charCodeAt(0).toString(16).padStart(2, "0")).join("")));
   } catch { return {}; }
+}
+function leerSesionGuardada() {
+  if (typeof window === "undefined") return null;
+  try {
+    const sesion = JSON.parse(window.sessionStorage.getItem(AUTH_SESSION_KEY));
+    if (!sesion?.token || !["admin", "chofer"].includes(sesion.role)) throw new Error("Sesión inválida");
+    const payload = decodeJwt(sesion.token);
+    if (payload.role !== sesion.role || !payload.exp || payload.exp * 1000 <= Date.now()) throw new Error("Sesión vencida");
+    return { ...sesion, camionId: sesion.camionId ?? payload.camionId };
+  } catch {
+    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
+    return null;
+  }
+}
+function guardarSesion(sesion) {
+  try { window.sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(sesion)); } catch {}
+}
+function borrarSesionGuardada() {
+  try { window.sessionStorage.removeItem(AUTH_SESSION_KEY); } catch {}
 }
 const PALETA_CAMIONES = ["#4FD1C5", "#F5A623", "#818CF8", "#F472B6", "#6EE7B7", "#FB923C", "#38BDF8", "#C084FC"];
 function colorDeCamion(id) { return PALETA_CAMIONES[((id || 1) - 1) % PALETA_CAMIONES.length]; }
@@ -1497,13 +1521,19 @@ function ThemeToggleFlotante({ modo, setModo, c }) {
 }
 
 export default function App() {
-  const [view, setView] = useState("vidriera");
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(leerSesionGuardada);
+  const [view, setView] = useState(() => session?.role || "vidriera");
   const [modo, setModo] = useState("dark");
   const c = modo === "dark" ? DARK : LIGHT;
 
-  const login = (s) => { setSession(s); setView(s.role); };
-  const logout = () => { setSession(null); setView("vidriera"); };
+  const login = (s) => { guardarSesion(s); setSession(s); setView(s.role); };
+  const logout = () => { borrarSesionGuardada(); setSession(null); setView("vidriera"); };
+
+  useEffect(() => {
+    const sesionVencida = () => { borrarSesionGuardada(); setSession(null); setView("login"); };
+    window.addEventListener(AUTH_EXPIRED_EVENT, sesionVencida);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, sesionVencida);
+  }, []);
 
   let contenido;
   if (view === "gate") contenido = <AccesoPrivadoGate onDesbloqueado={() => setView("login")} onVolver={() => setView("vidriera")} />;
