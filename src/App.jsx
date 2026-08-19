@@ -66,7 +66,6 @@ const fonts = (
 );
 
 const PAGOS = ["Efectivo", "Transferencia", "Mercado Pago"];
-const TIPOS_LUGAR = [{ id: "casa", label: "Casa", Icon: Home }, { id: "oficina", label: "Oficina", Icon: Briefcase }, { id: "empresa", label: "Empresa", Icon: Building2 }];
 // Lo que ve el cliente son 3 botones, pero el catálogo real solo tiene 2 categorías: "hogar" comparte con nadie,
 // "oficina" y "revendedor" comparten el mismo catálogo (el de mayoristas/oficinas).
 const OPCIONES_SEGMENTO = [
@@ -74,6 +73,7 @@ const OPCIONES_SEGMENTO = [
   { id: "oficina", label: "Oficina", categoria: "oficina_revendedor", Icon: Briefcase, desc: "Para tu empresa" },
   { id: "revendedor", label: "Revendedor", categoria: "oficina_revendedor", Icon: Store, desc: "Compra por mayor" },
 ];
+const TIPO_DESTINO_POR_SEGMENTO = { hogar: "casa", oficina: "oficina", revendedor: "empresa" };
 function fmtDate(d) { return d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" }); }
 const HOY = new Date(), AYER = new Date(HOY), MANANA = new Date(HOY);
 AYER.setDate(HOY.getDate() - 1); MANANA.setDate(HOY.getDate() + 1);
@@ -205,7 +205,12 @@ function ClientePortal({ onAccesoInterno }) {
   const camionAsignado = useMemo(() => { const z = zonas.find(x => x.barrio === form.barrio); return z ? { id: z.camionId, nombre: z.nombre, color: z.color } : null; }, [form.barrio, zonas]);
   const setQty = (id, delta) => setCant(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }));
 
-  const elegirSegmento = (op) => { setSegmento(op); setCant({}); setStep(1); };
+  const elegirSegmento = (op) => {
+    setSegmento(op);
+    setCant({});
+    setForm(prev => ({ ...prev, tipo: TIPO_DESTINO_POR_SEGMENTO[op.id] || "casa" }));
+    setStep(1);
+  };
 
   const confirmar = async () => {
     setEnviando(true); setError("");
@@ -293,7 +298,6 @@ function ClientePortal({ onAccesoInterno }) {
                   {zonas.map(z => <option key={z.barrio} value={z.barrio}>{z.barrio}</option>)}
                 </select>
                 {form.barrio && <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}><MapPin size={14} color={c.accent} /><span className="f-body text-xs" style={{ color: c.text }}>Tu zona corresponde a</span><CamionChip camion={camionAsignado} small /></div>}
-                <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Tipo de destino</p><div className="flex gap-2">{TIPOS_LUGAR.map(t => <button key={t.id} onClick={() => setForm({ ...form, tipo: t.id })} className="f-body flex-1 py-2.5 rounded-xl text-xs flex flex-col items-center gap-1" style={{ background: form.tipo === t.id ? c.accentSoft : c.surface, border: `1px solid ${form.tipo === t.id ? c.accent : c.border}`, color: form.tipo === t.id ? c.accent : c.textMuted }}><t.Icon size={16} /> {t.label}</button>)}</div></div>
                 <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => setForm({ ...form, pago: p })} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>El pago se coordina con el chofer, no se procesa en la web.</p></div>
                 <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.barrio || !form.calle} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
               </div>
