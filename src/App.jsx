@@ -298,6 +298,13 @@ function ClientePortal({ onAccesoInterno }) {
                   {zonas.map(z => <option key={z.barrio} value={z.barrio}>{z.barrio}</option>)}
                 </select>
                 {form.barrio && <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}><MapPin size={14} color={c.accent} /><span className="f-body text-xs" style={{ color: c.text }}>Tu zona corresponde a</span><CamionChip camion={camionAsignado} small /></div>}
+                <div>
+                  <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Tipo de destino</p>
+                  <div className="f-body w-full px-4 py-3 rounded-xl text-sm flex items-center justify-between" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+                    <span style={{ color: c.text }}>{segmento?.label || "—"}</span>
+                    <span className="text-[11px]" style={{ color: c.textFaint }}>Elegido al inicio</span>
+                  </div>
+                </div>
                 <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => setForm({ ...form, pago: p })} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>El pago se coordina con el chofer, no se procesa en la web.</p></div>
                 <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.barrio || !form.calle} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
               </div>
