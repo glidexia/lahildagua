@@ -130,6 +130,34 @@ function RangoFechas({ desde, hasta, setDesde, setHasta }) {
 }
 
 /* ---------------------------------- ZONE MAP ---------------------------------- */
+function DeliveryMap({ barrio, direccion }) {
+  const c = useTheme();
+  const ubicacion = [direccion, barrio, "Córdoba, Argentina"].filter(Boolean).join(", ");
+  const mapaUrl = `https://www.google.com/maps?q=${encodeURIComponent(ubicacion)}&z=15&output=embed`;
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: c.bgAlt, border: `1px solid ${c.borderSoft}` }}>
+      <div className="flex items-start gap-2.5 p-4">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}>
+          <MapPin size={17} color={c.accent} />
+        </div>
+        <div>
+          <p className="f-body text-[11px] uppercase tracking-wide" style={{ color: c.textFaint }}>Lugar de entrega</p>
+          <p className="f-display text-sm font-semibold" style={{ color: c.text }}>{barrio}</p>
+          <p className="f-body text-xs mt-0.5" style={{ color: c.textMuted }}>{direccion}</p>
+        </div>
+      </div>
+      <iframe
+        title={`Mapa de entrega en ${barrio}`}
+        src={mapaUrl}
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        style={{ width: "100%", height: 220, border: 0, display: "block" }}
+      />
+    </div>
+  );
+}
+
 function ZoneMap({ highlightBarrio, zonas }) {
   const c = useTheme();
   const cells = [
@@ -138,7 +166,8 @@ function ZoneMap({ highlightBarrio, zonas }) {
     { barrio: "Villa Belgrano" }, { barrio: "Güemes" }, { barrio: "Providencia" }, { barrio: "Villa Allende" },
     { barrio: "Jardín" }, { barrio: "Alberdi" }, { barrio: "San Vicente" }, { barrio: "Talleres" },
   ];
-  const find = (barrio) => (zonas || []).find(z => z.barrio === barrio);
+  const find = (nombreBarrio) => (zonas || []).find(z => z.barrio === nombreBarrio);
+
   return (
     <div className="rounded-2xl p-4" style={{ background: c.bgAlt, border: `1px solid ${c.borderSoft}` }}>
       <div className="grid grid-cols-4 gap-1.5">
@@ -152,7 +181,6 @@ function ZoneMap({ highlightBarrio, zonas }) {
           );
         })}
       </div>
-      <p className="f-body text-[11px] mt-3" style={{ color: c.textFaint }}>Mapa ilustrativo — la versión con geolocalización real es una mejora de fase 2.</p>
     </div>
   );
 }
@@ -312,7 +340,7 @@ function ClientePortal({ onAccesoInterno }) {
 
             {step === 3 && (
               <div className="space-y-4">
-                <ZoneMap highlightBarrio={form.barrio} zonas={zonas} />
+                <DeliveryMap barrio={form.barrio} direccion={form.calle} />
                 <div className="rounded-2xl p-4 space-y-2.5" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
                   {Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; return <div key={id} className="flex justify-between f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}</span><span className="f-mono" style={{ color: c.textMuted }}>${(Number(p.precio) * q).toLocaleString("es-AR")}</span></div>; })}
                   <div className="h-px my-1" style={{ background: c.border }} />
