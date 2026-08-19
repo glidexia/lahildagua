@@ -133,6 +133,25 @@ function BrandLogo({ variant = "word", className = "", style = {} }) {
   );
 }
 
+function SystemFooter() {
+  const c = useTheme();
+  return (
+    <footer className="shrink-0 px-4 py-3" style={{ background: c.bgAlt, borderTop: `1px solid ${c.borderSoft}` }}>
+      <a
+        href="https://glidex.ar"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="f-body mx-auto flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-[11px] transition-opacity hover:opacity-100"
+        style={{ color: c.textFaint, background: c.surface, border: `1px solid ${c.border}`, opacity: 0.82, textDecoration: "none" }}
+        title="Visitar Glidex.ar"
+      >
+        <Sparkles size={12} color={c.accent} />
+        <span>Sistema hecho por <strong style={{ color: c.textMuted }}>Glidex.ar</strong></span>
+      </a>
+    </footer>
+  );
+}
+
 const fonts = (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
@@ -397,7 +416,7 @@ function WhatsAppFlotante() {
   return (
     <a href="https://wa.me/3515937318" target="_blank" rel="noopener noreferrer"
       className="flex items-center gap-2"
-      style={{ position: "fixed", bottom: 18, right: 18, zIndex: 60, textDecoration: "none" }}>
+      style={{ position: "fixed", bottom: 68, right: 18, zIndex: 60, textDecoration: "none" }}>
       <span className="f-body text-xs px-3 py-2 rounded-full shadow-lg hidden sm:inline-block" style={{ background: c.surface, color: c.text, border: `1px solid ${c.border}` }}>
         ¿Alguna duda? Escribinos acá 👋
       </span>
@@ -463,10 +482,10 @@ function ClientePortal({ onAccesoInterno }) {
     setEnviando(false);
   };
 
-  if (cargando) return <div className="min-h-screen flex items-center justify-center" style={{ background: c.bg }}><Cargando label="Cargando la tienda..." /></div>;
+  if (cargando) return <div className="flex-1 flex items-center justify-center" style={{ background: c.bg }}><Cargando label="Cargando la tienda..." /></div>;
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: c.bg }}>
+    <div className="flex-1 flex flex-col" style={{ background: c.bg }}>
       <div className="sticky top-0 z-10" style={{ background: `${c.bg}E6`, borderBottom: `1px solid ${c.borderSoft}`, backdropFilter: "blur(6px)" }}>
         <div className="max-w-md mx-auto px-4 py-3 flex items-center">
           <BrandLogo variant="word" className="h-8 w-auto max-w-[150px]" />
@@ -592,7 +611,7 @@ function AccesoPrivadoGate({ onDesbloqueado, onVolver }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: c.bgAlt }}>
+    <div className="flex-1 flex items-center justify-center px-4" style={{ background: c.bgAlt }}>
       <div className="w-full max-w-sm">
         <button onClick={onVolver} className="f-body flex items-center gap-1 text-xs mb-6" style={{ color: c.textFaint }}><ChevronLeft size={13} /> Volver a la tienda</button>
         <div className="text-center mb-6">
@@ -636,7 +655,7 @@ function LoginGate({ onLogin, onVolver }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: c.bgAlt }}>
+    <div className="flex-1 flex items-center justify-center px-4" style={{ background: c.bgAlt }}>
       <div className="w-full max-w-sm">
         <button onClick={onVolver} className="f-body flex items-center gap-1 text-xs mb-6" style={{ color: c.textFaint }}><ChevronLeft size={13} /> Volver a la tienda</button>
         <div className="text-center mb-6">
@@ -698,7 +717,7 @@ function ChoferPanel({ session, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: c.bg }}>
+    <div className="flex-1" style={{ background: c.bg }}>
       <div className="max-w-md mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-5">
           <BrandLogo variant="word" className="h-8 w-auto max-w-[150px]" />
@@ -1478,7 +1497,7 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
   const titles = { dashboard: "Dashboard general", pedidos: "Pedidos", clientes: "Base de clientes", catalogo: "Catálogo de productos", camiones: "Camiones y zonas", calendario: "Días no hábiles", configuracion: "Mi cuenta y configuración" };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row" style={{ background: c.bg }}>
+    <div className="flex-1 flex flex-col md:flex-row" style={{ background: c.bg }}>
       <div className="hidden md:flex w-56 shrink-0 flex-col" style={{ background: c.bgAlt, borderRight: `1px solid ${c.borderSoft}` }}>
         <div className="px-4 py-4"><BrandLogo variant="word" className="h-8 w-auto max-w-[145px]" /></div>
         <p className="f-body text-[11px] px-4 mb-2" style={{ color: c.textFaint }}>{nombreAdmin}</p>
@@ -1538,7 +1557,7 @@ function ThemeToggleFlotante({ modo, setModo, c }) {
 export default function App() {
   const [session, setSession] = useState(leerSesionGuardada);
   const [view, setView] = useState(() => session?.role || "vidriera");
-  const [modo, setModo] = useState("dark");
+  const [modo, setModo] = useState("light");
   const c = modo === "dark" ? DARK : LIGHT;
 
   const login = (s) => { guardarSesion(s); setSession(s); setView(s.role); };
@@ -1559,12 +1578,13 @@ export default function App() {
 
   return (
     <ThemeContext.Provider value={c}>
-      <div className={`f-body ${modo === "dark" ? "theme-dark" : "theme-light"}`}>
+      <div className={`f-body min-h-screen flex flex-col ${modo === "dark" ? "theme-dark" : "theme-light"}`} style={{ background: c.bg }}>
         {fonts}
         <ErrorModal />
         <ConfirmModal />
         {view !== "admin" && <ThemeToggleFlotante modo={modo} setModo={setModo} c={c} />}
-        {contenido}
+        <main className="flex-1 flex flex-col">{contenido}</main>
+        <SystemFooter />
       </div>
     </ThemeContext.Provider>
   );
