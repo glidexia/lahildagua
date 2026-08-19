@@ -120,6 +120,19 @@ const LIGHT = {
 const ThemeContext = React.createContext(DARK);
 function useTheme() { return React.useContext(ThemeContext); }
 
+function BrandLogo({ variant = "word", className = "", style = {} }) {
+  const c = useTheme();
+  const version = c === DARK ? "white" : "color";
+  return (
+    <img
+      src={`/brand/lahilda-${variant}-${version}.png`}
+      alt="La Hilda"
+      className={`block object-contain ${className}`}
+      style={style}
+    />
+  );
+}
+
 const fonts = (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
@@ -455,9 +468,8 @@ function ClientePortal({ onAccesoInterno }) {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: c.bg }}>
       <div className="sticky top-0 z-10" style={{ background: `${c.bg}E6`, borderBottom: `1px solid ${c.borderSoft}`, backdropFilter: "blur(6px)" }}>
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: c.accent }}><Droplet size={14} color={c.bgAlt} fill={c.bgAlt} /></div>
-          <span className="f-display text-sm font-semibold" style={{ color: c.text }}>La Hilda</span>
+        <div className="max-w-md mx-auto px-4 py-3 flex items-center">
+          <BrandLogo variant="word" className="h-8 w-auto max-w-[150px]" />
         </div>
       </div>
 
@@ -584,7 +596,7 @@ function AccesoPrivadoGate({ onDesbloqueado, onVolver }) {
       <div className="w-full max-w-sm">
         <button onClick={onVolver} className="f-body flex items-center gap-1 text-xs mb-6" style={{ color: c.textFaint }}><ChevronLeft size={13} /> Volver a la tienda</button>
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3" style={{ background: c.amberSoft }}><Lock size={20} color={c.amber} /></div>
+          <BrandLogo variant="full" className="h-28 w-auto max-w-[160px] mx-auto mb-5" />
           <h2 className="f-display text-lg font-semibold" style={{ color: c.text }}>Área privada</h2>
           <p className="f-body text-xs mt-1" style={{ color: c.textFaint }}>Ingresá la contraseña del apartado para continuar</p>
         </div>
@@ -628,7 +640,7 @@ function LoginGate({ onLogin, onVolver }) {
       <div className="w-full max-w-sm">
         <button onClick={onVolver} className="f-body flex items-center gap-1 text-xs mb-6" style={{ color: c.textFaint }}><ChevronLeft size={13} /> Volver a la tienda</button>
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3" style={{ background: c.accentSoft }}><Lock size={20} color={c.accent} /></div>
+          <BrandLogo variant="full" className="h-28 w-auto max-w-[160px] mx-auto mb-5" />
           <h2 className="f-display text-lg font-semibold" style={{ color: c.text }}>Acceso interno</h2>
         </div>
         <div className="flex rounded-xl p-1 mb-5" style={{ background: c.surface }}>
@@ -689,11 +701,14 @@ function ChoferPanel({ session, onLogout }) {
     <div className="min-h-screen" style={{ background: c.bg }}>
       <div className="max-w-md mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-5">
+          <BrandLogo variant="word" className="h-8 w-auto max-w-[150px]" />
+          <button onClick={onLogout} className="f-body flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs" style={{ background: c.surface, color: c.textMuted }}><LogOut size={14} /> Salir</button>
+        </div>
+        <div className="flex items-center gap-2.5 mb-5">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: `${camionColor}22` }}><Truck size={16} color={camionColor} /></div>
             <div><p className="f-display text-sm font-semibold" style={{ color: c.text }}>{session.camion || "Tu camión"}</p><p className="f-body text-[11px]" style={{ color: c.textFaint }}>{session.nombre}</p></div>
           </div>
-          <button onClick={onLogout} className="f-body flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs" style={{ background: c.surface, color: c.textMuted }}><LogOut size={14} /> Salir</button>
         </div>
 
         {dia === "hoy" && (
@@ -1465,7 +1480,7 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
   return (
     <div className="min-h-screen flex flex-col md:flex-row" style={{ background: c.bg }}>
       <div className="hidden md:flex w-56 shrink-0 flex-col" style={{ background: c.bgAlt, borderRight: `1px solid ${c.borderSoft}` }}>
-        <div className="flex items-center gap-2 px-4 py-4"><div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: c.accent }}><Droplet size={14} color={c.bgAlt} fill={c.bgAlt} /></div><span className="f-display text-sm font-semibold" style={{ color: c.text }}>La Hilda</span></div>
+        <div className="px-4 py-4"><BrandLogo variant="word" className="h-8 w-auto max-w-[145px]" /></div>
         <p className="f-body text-[11px] px-4 mb-2" style={{ color: c.textFaint }}>{nombreAdmin}</p>
         <nav className="flex-1 px-2 space-y-0.5">
           {NAV.map(n => (
@@ -1480,7 +1495,7 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
 
       <div className="md:hidden sticky top-0 z-10" style={{ background: c.bgAlt, borderBottom: `1px solid ${c.borderSoft}` }}>
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ background: c.accent }}><Droplet size={14} color={c.bgAlt} fill={c.bgAlt} /></div><span className="f-display text-sm font-semibold" style={{ color: c.text }}>La Hilda</span></div>
+          <BrandLogo variant="word" className="h-8 w-auto max-w-[145px]" />
           <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={() => setModo(modo === "dark" ? "light" : "dark")} className="p-2 rounded-lg" style={{ background: c.surface }}>{modo === "dark" ? <Sun size={14} color={c.textMuted} /> : <Moon size={14} color={c.textMuted} />}</button>
             <button onClick={onLogout} className="p-2 rounded-lg" style={{ background: c.surface }}><LogOut size={14} color={c.textMuted} /></button>
