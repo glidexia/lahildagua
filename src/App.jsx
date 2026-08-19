@@ -11,6 +11,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, Cart
 /* ---------------------------------- API ---------------------------------- */
 const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 const ERROR_GLOBAL_EVENT = "lahilda:error";
+const CONFIRM_GLOBAL_EVENT = "lahilda:confirmar";
 let ultimoErrorGlobal = { mensaje: "", momento: 0 };
 
 function mostrarErrorGlobal(mensaje) {
@@ -19,6 +20,15 @@ function mostrarErrorGlobal(mensaje) {
   if (ultimoErrorGlobal.mensaje === mensaje && ahora - ultimoErrorGlobal.momento < 800) return;
   ultimoErrorGlobal = { mensaje, momento: ahora };
   window.dispatchEvent(new CustomEvent(ERROR_GLOBAL_EVENT, { detail: { mensaje } }));
+}
+
+function confirmarAccion({ titulo, mensaje, textoConfirmar = "Confirmar", textoCancelar = "Cancelar", peligro = true }) {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  return new Promise(resolve => {
+    window.dispatchEvent(new CustomEvent(CONFIRM_GLOBAL_EVENT, {
+      detail: { titulo, mensaje, textoConfirmar, textoCancelar, peligro, resolve },
+    }));
+  });
 }
 
 function mensajeAmigableApi(status, data, path) {
@@ -94,7 +104,16 @@ const fonts = (
     .theme-light input,.theme-light select{color-scheme:light}
     @keyframes spin{to{transform:rotate(360deg)}}
     @keyframes wspBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+    @keyframes modalBackdropIn{from{opacity:0}to{opacity:1}}
+    @keyframes modalBackdropOut{from{opacity:1}to{opacity:0}}
+    @keyframes modalCardIn{from{opacity:0;transform:translateY(-18px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes modalCardOut{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(10px) scale(.97)}}
     .wsp-bounce{animation:wspBounce 1.8s ease-in-out infinite}
+    .modal-backdrop-in{animation:modalBackdropIn .2s ease-out both}
+    .modal-backdrop-out{animation:modalBackdropOut .16s ease-in both}
+    .modal-card-in{animation:modalCardIn .26s cubic-bezier(.2,.8,.2,1) both}
+    .modal-card-out{animation:modalCardOut .16s ease-in both}
+    @media (prefers-reduced-motion:reduce){.modal-backdrop-in,.modal-backdrop-out,.modal-card-in,.modal-card-out{animation:none}}
   `}</style>
 );
 
@@ -161,12 +180,75 @@ function ErrorModal() {
 
   if (!mensaje) return null;
   return (
-    <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setMensaje(""); }} className="fixed inset-0 flex items-center justify-center px-4" style={{ zIndex: 1000, background: "rgba(2, 8, 23, 0.72)", backdropFilter: "blur(4px)" }}>
-      <div role="alertdialog" aria-modal="true" aria-labelledby="error-modal-titulo" aria-describedby="error-modal-mensaje" className="w-full max-w-sm rounded-2xl p-5 shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+    <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setMensaje(""); }} className="modal-backdrop-in fixed inset-0 flex items-center justify-center px-4" style={{ zIndex: 1000, background: "rgba(2, 8, 23, 0.72)", backdropFilter: "blur(4px)" }}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="error-modal-titulo" aria-describedby="error-modal-mensaje" className="modal-card-in w-full max-w-sm rounded-2xl p-5 shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
         <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4" style={{ background: c.dangerSoft }}><AlertCircle size={22} color={c.danger} /></div>
         <h2 id="error-modal-titulo" className="f-display text-lg font-semibold" style={{ color: c.text }}>No pudimos completar la acción</h2>
         <p id="error-modal-mensaje" className="f-body text-sm mt-2 leading-relaxed" style={{ color: c.textMuted }}>{mensaje}</p>
         <button autoFocus onClick={() => setMensaje("")} className="f-body w-full mt-5 py-2.5 rounded-xl text-sm font-medium" style={{ background: c.accent, color: c.bgAlt }}>Entendido</button>
+      </div>
+    </div>
+  );
+}
+function ConfirmModal() {
+  const c = useTheme();
+  const [confirmacion, setConfirmacion] = useState(null);
+  const [cerrando, setCerrando] = useState(false);
+
+  useEffect(() => {
+    const abrir = (evento) => {
+      setCerrando(false);
+      setConfirmacion(evento.detail);
+    };
+    window.addEventListener(CONFIRM_GLOBAL_EVENT, abrir);
+    return () => window.removeEventListener(CONFIRM_GLOBAL_EVENT, abrir);
+  }, []);
+
+  const responder = useCallback((aceptado) => {
+    if (!confirmacion || cerrando) return;
+    setCerrando(true);
+    window.setTimeout(() => {
+      confirmacion.resolve(aceptado);
+      setConfirmacion(null);
+      setCerrando(false);
+    }, 160);
+  }, [confirmacion, cerrando]);
+
+  useEffect(() => {
+    if (!confirmacion) return;
+    const cerrarConEscape = (evento) => { if (evento.key === "Escape") responder(false); };
+    window.addEventListener("keydown", cerrarConEscape);
+    return () => window.removeEventListener("keydown", cerrarConEscape);
+  }, [confirmacion, responder]);
+
+  if (!confirmacion) return null;
+  const color = confirmacion.peligro ? c.danger : c.accent;
+  const fondoIcono = confirmacion.peligro ? c.dangerSoft : c.accentSoft;
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={e => { if (e.target === e.currentTarget) responder(false); }}
+      className={`${cerrando ? "modal-backdrop-out" : "modal-backdrop-in"} fixed inset-0 flex items-center justify-center px-4`}
+      style={{ zIndex: 1001, background: "rgba(2, 8, 23, 0.76)", backdropFilter: "blur(6px)" }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-titulo"
+        aria-describedby="confirm-modal-mensaje"
+        className={`${cerrando ? "modal-card-out" : "modal-card-in"} w-full max-w-md rounded-2xl p-5 shadow-2xl`}
+        style={{ background: c.surface, border: `1px solid ${c.border}` }}
+      >
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4" style={{ background: fondoIcono }}>
+          {confirmacion.peligro ? <Trash2 size={21} color={color} /> : <CheckCircle2 size={21} color={color} />}
+        </div>
+        <h2 id="confirm-modal-titulo" className="f-display text-lg font-semibold" style={{ color: c.text }}>{confirmacion.titulo}</h2>
+        <p id="confirm-modal-mensaje" className="f-body text-sm mt-2 leading-relaxed" style={{ color: c.textMuted }}>{confirmacion.mensaje}</p>
+        <div className="grid grid-cols-2 gap-2.5 mt-6">
+          <button onClick={() => responder(false)} className="f-body py-2.5 rounded-xl text-sm font-medium" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }}>{confirmacion.textoCancelar}</button>
+          <button autoFocus onClick={() => responder(true)} className="f-body py-2.5 rounded-xl text-sm font-semibold" style={{ background: color, color: confirmacion.peligro ? "#FFFFFF" : c.bgAlt }}>{confirmacion.textoConfirmar}</button>
+        </div>
       </div>
     </div>
   );
@@ -940,9 +1022,11 @@ function AdminCatalogo({ token }) {
     try { await api(`/admin/productos/${id}`, { method: "PATCH", token, body: { activo: !activo } }); } catch { cargar(); }
   };
   const eliminar = async (producto) => {
-    const confirmado = window.confirm(
-      `¿Eliminar definitivamente "${producto.nombre}"?\n\nDejará de aparecer en el catálogo. Los pedidos anteriores conservarán el nombre y el precio que tenían al comprarse.`
-    );
+    const confirmado = await confirmarAccion({
+      titulo: `¿Eliminar "${producto.nombre}"?`,
+      mensaje: "Se eliminará definitivamente del catálogo. Los pedidos anteriores conservarán el nombre y el precio que tenían al comprarse.",
+      textoConfirmar: "Sí, eliminar",
+    });
     if (!confirmado) return;
 
     setError("");
@@ -1023,7 +1107,13 @@ function AdminCalendario({ token }) {
   };
 
   const quitar = async (dia) => {
-    if (!window.confirm(`¿Volver a habilitar ${formatearFechaEntrega(dia.fecha)}?`)) return;
+    const confirmado = await confirmarAccion({
+      titulo: "¿Habilitar nuevamente esta fecha?",
+      mensaje: `${formatearFechaEntrega(dia.fecha)} volverá a estar disponible para entregas.`,
+      textoConfirmar: "Sí, habilitar",
+      peligro: false,
+    });
+    if (!confirmado) return;
     setError(""); setMensaje("");
     try {
       await api(`/admin/calendario/${dia.id}`, { method: "DELETE", token });
@@ -1199,7 +1289,12 @@ function AdminCamiones({ token }) {
 
   const guardarCamion = async (id, cambios) => { try { await api(`/admin/camiones/${id}`, { method: "PATCH", token, body: cambios }); cargar(false); } catch (e) { setError(e.message || "No se pudo guardar el camión."); } };
   const eliminarCamion = async (id) => {
-    if (!window.confirm("¿Eliminar este camión? Solo se puede si no tiene pedidos en su historial.")) return;
+    const confirmado = await confirmarAccion({
+      titulo: "¿Eliminar este camión?",
+      mensaje: "Solo se podrá eliminar si no tiene pedidos en su historial.",
+      textoConfirmar: "Sí, eliminar",
+    });
+    if (!confirmado) return;
     try { await api(`/admin/camiones/${id}`, { method: "DELETE", token }); cargar(false); } catch (e) { setError(e.message || "No se pudo eliminar el camión."); }
   };
   const asignarZona = async (zonaId, camionId) => { try { await api(`/admin/zonas/${zonaId}/camion`, { method: "PATCH", token, body: { camionId } }); cargar(false); } catch { setError("No se pudo asignar la zona."); } };
@@ -1422,6 +1517,7 @@ export default function App() {
       <div className={`f-body ${modo === "dark" ? "theme-dark" : "theme-light"}`}>
         {fonts}
         <ErrorModal />
+        <ConfirmModal />
         {view !== "admin" && <ThemeToggleFlotante modo={modo} setModo={setModo} c={c} />}
         {contenido}
       </div>
