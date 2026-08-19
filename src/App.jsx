@@ -835,7 +835,7 @@ function ListaProductos({ productos, onEditarPrecio, onToggleActivo, onEliminar 
           <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
             <div className="flex items-center gap-1"><span className="f-mono text-xs" style={{ color: c.textFaint }}>$</span><input type="number" defaultValue={p.precio} onBlur={e => onEditarPrecio(p.id, e.target.value)} className="f-mono text-xs w-20 px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
             <button onClick={() => onToggleActivo(p.id, p.activo)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap" style={{ background: p.activo ? c.successSoft : c.dangerSoft, color: p.activo ? c.success : c.danger }}>{p.activo ? "Activo" : "Oculto"}</button>
-            <button onClick={() => onEliminar(p.id)} className="p-1.5 rounded-lg" style={{ background: c.dangerSoft }} title="Eliminar"><Trash2 size={13} color={c.danger} /></button>
+            <button onClick={() => onEliminar(p)} className="p-1.5 rounded-lg" style={{ background: c.dangerSoft }} title={`Eliminar definitivamente ${p.nombre}`} aria-label={`Eliminar definitivamente ${p.nombre}`}><Trash2 size={13} color={c.danger} /></button>
           </div>
         </div>
       ))}
@@ -849,6 +849,7 @@ function AdminCatalogo({ token }) {
   const [productos, setProductos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [mensaje, setMensaje] = useState("");
   const [tab, setTab] = useState("hogar");
   const [nuevo, setNuevo] = useState({ nombre: "", precio: "", descripcion: "" });
 
@@ -863,9 +864,21 @@ function AdminCatalogo({ token }) {
     setProductos(prev => prev.map(p => p.id === id ? { ...p, activo: !activo } : p));
     try { await api(`/admin/productos/${id}`, { method: "PATCH", token, body: { activo: !activo } }); } catch { cargar(); }
   };
-  const eliminar = async (id) => {
-    try { await api(`/admin/productos/${id}`, { method: "DELETE", token }); cargar(); }
-    catch (e) { setError(e.message || "No se pudo eliminar."); }
+  const eliminar = async (producto) => {
+    const confirmado = window.confirm(
+      `¿Eliminar definitivamente "${producto.nombre}"?\n\nDejará de aparecer en el catálogo. Los pedidos anteriores conservarán el nombre y el precio que tenían al comprarse.`
+    );
+    if (!confirmado) return;
+
+    setError("");
+    setMensaje("");
+    try {
+      await api(`/admin/productos/${producto.id}`, { method: "DELETE", token });
+      setProductos(prev => prev.filter(p => p.id !== producto.id));
+      setMensaje(`"${producto.nombre}" fue eliminado definitivamente.`);
+    } catch (e) {
+      setError(e.message || "No se pudo eliminar el producto.");
+    }
   };
   const agregar = async () => {
     if (!nuevo.nombre || !nuevo.precio) return;
@@ -884,6 +897,7 @@ function AdminCatalogo({ token }) {
         <button onClick={() => setTab("oficina_revendedor")} className="f-body px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === "oficina_revendedor" ? c.accentSoft : "transparent", color: tab === "oficina_revendedor" ? c.accent : c.textMuted }}><Briefcase size={13} /> Oficina y Revendedor</button>
       </div>
       <ErrorBanner mensaje={error} />
+      {mensaje && <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.successSoft }}><CheckCircle2 size={14} color={c.success} /><span className="f-body text-xs" style={{ color: c.success }}>{mensaje}</span></div>}
 
       <ListaProductos productos={delTab} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} />
 
@@ -895,6 +909,82 @@ function AdminCatalogo({ token }) {
           <input type="number" placeholder="Precio" value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} className="f-body flex-1 px-3 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
           <button onClick={agregar} className="f-body px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center gap-1 shrink-0" style={{ background: c.accent, color: c.bgAlt }}><Plus size={14} /> Agregar</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------- ADMIN: DÍAS NO HÁBILES ---------------------------------- */
+function AdminCalendario({ token }) {
+  const c = useTheme();
+  const [dias, setDias] = useState([]);
+  const [fecha, setFecha] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
+  const [mensaje, setMensaje] = useState("");
+
+  const cargar = useCallback(async () => {
+    try {
+      setDias(await api("/admin/calendario", { token }));
+      setError("");
+    } catch (e) {
+      setError(e.message || "No pudimos cargar los días no hábiles.");
+    } finally {
+      setCargando(false);
+    }
+  }, [token]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const agregar = async () => {
+    if (!fecha) { setError("Elegí una fecha."); return; }
+    setError(""); setMensaje("");
+    try {
+      await api("/admin/calendario", { method: "POST", token, body: { fecha, motivo } });
+      setFecha(""); setMotivo(""); setMensaje("Día no hábil agregado.");
+      await cargar();
+    } catch (e) { setError(e.message || "No se pudo agregar la fecha."); }
+  };
+
+  const quitar = async (dia) => {
+    if (!window.confirm(`¿Volver a habilitar ${formatearFechaEntrega(dia.fecha)}?`)) return;
+    setError(""); setMensaje("");
+    try {
+      await api(`/admin/calendario/${dia.id}`, { method: "DELETE", token });
+      setDias(prev => prev.filter(d => d.id !== dia.id));
+      setMensaje("La fecha volvió a quedar habilitada para entregas.");
+    } catch (e) { setError(e.message || "No se pudo quitar la fecha."); }
+  };
+
+  if (cargando) return <Cargando />;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.accentSoft }}>
+        <CalendarClock size={15} color={c.accent} className="mt-0.5 shrink-0" />
+        <p className="f-body text-xs" style={{ color: c.text }}>Sábados y domingos ya se excluyen automáticamente. Agregá acá feriados u otros días sin reparto; los pedidos pasarán al siguiente día hábil.</p>
+      </div>
+      <ErrorBanner mensaje={error} />
+      {mensaje && <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.successSoft }}><CheckCircle2 size={14} color={c.success} /><span className="f-body text-xs" style={{ color: c.success }}>{mensaje}</span></div>}
+
+      <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-body text-sm font-medium mb-3" style={{ color: c.text }}>Agregar día sin reparto</p>
+        <div className="grid sm:grid-cols-[180px_1fr_auto] gap-2">
+          <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="f-body px-3 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} />
+          <Input placeholder="Motivo (ej. Feriado nacional)" value={motivo} onChange={e => setMotivo(e.target.value)} />
+          <button onClick={agregar} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5" style={{ background: c.accent, color: c.bgAlt }}><Plus size={14} /> Agregar</button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl overflow-hidden" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        {dias.length === 0 && <p className="f-body text-xs p-4" style={{ color: c.textFaint }}>No hay feriados ni días adicionales cargados.</p>}
+        {dias.map((dia, index) => (
+          <div key={dia.id} className="flex items-center gap-3 px-4 py-3" style={{ borderTop: index ? `1px solid ${c.borderSoft}` : "none" }}>
+            <CalendarClock size={15} color={c.accent} />
+            <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{formatearFechaEntrega(dia.fecha)}</p><p className="f-body text-[11px]" style={{ color: c.textFaint }}>{dia.motivo || "Sin motivo"}</p></div>
+            <button onClick={() => quitar(dia)} className="p-2 rounded-lg" style={{ background: c.dangerSoft }} title="Quitar día no hábil" aria-label={`Quitar ${formatearFechaEntrega(dia.fecha)}`}><Trash2 size={13} color={c.danger} /></button>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1170,9 +1260,10 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
     { id: "clientes", label: "Clientes", Icon: Users },
     { id: "catalogo", label: "Catálogo", Icon: Boxes },
     { id: "camiones", label: "Camiones", Icon: Truck },
+    { id: "calendario", label: "Días no hábiles", Icon: CalendarClock },
     { id: "configuracion", label: "Mi cuenta", Icon: Settings },
   ];
-  const titles = { dashboard: "Dashboard general", pedidos: "Pedidos", clientes: "Base de clientes", catalogo: "Catálogo de productos", camiones: "Camiones y zonas", configuracion: "Mi cuenta y configuración" };
+  const titles = { dashboard: "Dashboard general", pedidos: "Pedidos", clientes: "Base de clientes", catalogo: "Catálogo de productos", camiones: "Camiones y zonas", calendario: "Días no hábiles", configuracion: "Mi cuenta y configuración" };
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row" style={{ background: c.bg }}>
@@ -1215,6 +1306,7 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
           {view === "clientes" && <AdminClientes token={session.token} />}
           {view === "catalogo" && <AdminCatalogo token={session.token} />}
           {view === "camiones" && <AdminCamiones token={session.token} />}
+          {view === "calendario" && <AdminCalendario token={session.token} />}
           {view === "configuracion" && <AdminConfiguracion token={session.token} onNombreActualizado={setNombreAdmin} />}
         </div>
       </div>
