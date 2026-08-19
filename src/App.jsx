@@ -10,16 +10,49 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, Cart
 
 /* ---------------------------------- API ---------------------------------- */
 const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:4000").replace(/\/+$/, "");
+const ERROR_GLOBAL_EVENT = "lahilda:error";
+let ultimoErrorGlobal = { mensaje: "", momento: 0 };
+
+function mostrarErrorGlobal(mensaje) {
+  if (!mensaje || typeof window === "undefined") return;
+  const ahora = Date.now();
+  if (ultimoErrorGlobal.mensaje === mensaje && ahora - ultimoErrorGlobal.momento < 800) return;
+  ultimoErrorGlobal = { mensaje, momento: ahora };
+  window.dispatchEvent(new CustomEvent(ERROR_GLOBAL_EVENT, { detail: { mensaje } }));
+}
+
+function mensajeAmigableApi(status, data, path) {
+  const detalle = typeof data?.error === "string" ? data.error.trim() : "";
+  if (status >= 500) return "Tuvimos un problema interno. Esperá un momento y volvé a intentar.";
+  if (status === 401) return path.includes("/auth/") ? "El usuario o la contraseña no son correctos." : "Tu sesión venció. Volvé a iniciar sesión.";
+  if (status === 403) return "No tenés permisos para realizar esta acción.";
+  if (status === 404) return detalle || "No encontramos la información solicitada.";
+  if (status === 409) return detalle || "No pudimos completar la acción porque la información cambió.";
+  if (status === 422) return detalle || "No pudimos procesar esos datos. Revisalos e intentá nuevamente.";
+  if (status === 400) return detalle || "Revisá los datos ingresados e intentá nuevamente.";
+  return "No pudimos completar la acción. Intentá nuevamente.";
+}
 
 async function api(path, { method = "GET", body, token } = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    const mensaje = "No pudimos conectarnos. Revisá tu conexión e intentá nuevamente.";
+    mostrarErrorGlobal(mensaje);
+    throw new Error(mensaje);
+  }
   let data = {};
   try { data = await res.json(); } catch {}
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  if (!res.ok) {
+    const mensaje = mensajeAmigableApi(res.status, data, path);
+    mostrarErrorGlobal(mensaje);
+    throw new Error(mensaje);
+  }
   return data;
 }
 function decodeJwt(token) {
@@ -98,7 +131,46 @@ function isoDate(d) { return d.toISOString().slice(0, 10); }
 /* ---------------------------------- HELPERS UI ---------------------------------- */
 function Spinner({ size = 16 }) { const c = useTheme(); return <Loader2 size={size} color={c.textFaint} style={{ animation: "spin 0.9s linear infinite" }} />; }
 function Cargando({ label = "Cargando..." }) { const c = useTheme(); return <div className="flex items-center justify-center gap-2 py-10"><Spinner /><span className="f-body text-xs" style={{ color: c.textFaint }}>{label}</span></div>; }
-function ErrorBanner({ mensaje }) { const c = useTheme(); if (!mensaje) return null; return <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-3" style={{ background: c.dangerSoft }}><AlertCircle size={14} color={c.danger} /><span className="f-body text-xs" style={{ color: c.danger }}>{mensaje}</span></div>; }
+function ErrorBanner({ mensaje }) {
+  useEffect(() => { if (mensaje) mostrarErrorGlobal(mensaje); }, [mensaje]);
+  return null;
+}
+function ErrorModal() {
+  const c = useTheme();
+  const [mensaje, setMensaje] = useState("");
+
+  useEffect(() => {
+    const mostrar = (evento) => setMensaje(evento.detail?.mensaje || "No pudimos completar la acción.");
+    const errorInesperado = () => mostrarErrorGlobal("Ocurrió un problema inesperado. Intentá nuevamente.");
+    window.addEventListener(ERROR_GLOBAL_EVENT, mostrar);
+    window.addEventListener("error", errorInesperado);
+    window.addEventListener("unhandledrejection", errorInesperado);
+    return () => {
+      window.removeEventListener(ERROR_GLOBAL_EVENT, mostrar);
+      window.removeEventListener("error", errorInesperado);
+      window.removeEventListener("unhandledrejection", errorInesperado);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mensaje) return;
+    const cerrarConEscape = (evento) => { if (evento.key === "Escape") setMensaje(""); };
+    window.addEventListener("keydown", cerrarConEscape);
+    return () => window.removeEventListener("keydown", cerrarConEscape);
+  }, [mensaje]);
+
+  if (!mensaje) return null;
+  return (
+    <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setMensaje(""); }} className="fixed inset-0 flex items-center justify-center px-4" style={{ zIndex: 1000, background: "rgba(2, 8, 23, 0.72)", backdropFilter: "blur(4px)" }}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="error-modal-titulo" aria-describedby="error-modal-mensaje" className="w-full max-w-sm rounded-2xl p-5 shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4" style={{ background: c.dangerSoft }}><AlertCircle size={22} color={c.danger} /></div>
+        <h2 id="error-modal-titulo" className="f-display text-lg font-semibold" style={{ color: c.text }}>No pudimos completar la acción</h2>
+        <p id="error-modal-mensaje" className="f-body text-sm mt-2 leading-relaxed" style={{ color: c.textMuted }}>{mensaje}</p>
+        <button autoFocus onClick={() => setMensaje("")} className="f-body w-full mt-5 py-2.5 rounded-xl text-sm font-medium" style={{ background: c.accent, color: c.bgAlt }}>Entendido</button>
+      </div>
+    </div>
+  );
+}
 function EstadoBadge({ estado }) {
   const c = useTheme();
   const map = {
@@ -396,7 +468,7 @@ function AccesoPrivadoGate({ onDesbloqueado, onVolver }) {
     try {
       const resp = await api("/public/area-privada/verificar", { method: "POST", body: { clave } });
       if (resp.ok) onDesbloqueado();
-      else setError("Contraseña incorrecta.");
+      else { setError("Contraseña incorrecta."); mostrarErrorGlobal("La contraseña del área privada no es correcta."); }
     } catch (e) { setError("No pudimos verificar la clave. Probá de nuevo."); }
     setCargando(false);
   };
@@ -412,7 +484,7 @@ function AccesoPrivadoGate({ onDesbloqueado, onVolver }) {
         </div>
         <div className="space-y-2.5">
           <Input placeholder="Contraseña de acceso" type="password" value={clave} onChange={e => { setClave(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && validar()} style={error ? { borderColor: c.danger } : {}} />
-          {error && <p className="f-body text-[11px] flex items-center gap-1" style={{ color: c.danger }}><XCircle size={11} /> {error}</p>}
+          <ErrorBanner mensaje={error} />
           <button onClick={validar} disabled={cargando} className="f-body w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{cargando && <Spinner size={14} />} Continuar</button>
         </div>
       </div>
@@ -432,7 +504,10 @@ function LoginGate({ onLogin, onVolver }) {
   const cambiarRole = (r) => { setRole(r); setUsuario(""); setPass(""); setError(""); };
 
   const ingresar = async () => {
-    if (!usuario.trim() || !pass.trim()) { setError("Completá usuario y contraseña."); return; }
+    if (!usuario.trim() || !pass.trim()) {
+      const mensaje = "Completá usuario y contraseña.";
+      setError(mensaje); mostrarErrorGlobal(mensaje); return;
+    }
     setCargando(true); setError("");
     try {
       const resp = await api(`/auth/${role}/login`, { method: "POST", body: { usuario: usuario.trim(), password: pass } });
@@ -458,7 +533,7 @@ function LoginGate({ onLogin, onVolver }) {
         <div className="space-y-2.5">
           <Input placeholder="Usuario" value={usuario} onChange={e => { setUsuario(e.target.value); setError(""); }} />
           <Input placeholder="Contraseña" type="password" value={pass} onChange={e => { setPass(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && ingresar()} style={error ? { borderColor: c.danger } : {}} />
-          {error && <p className="f-body text-[11px] flex items-center gap-1" style={{ color: c.danger }}><XCircle size={11} /> {error}</p>}
+          <ErrorBanner mensaje={error} />
           <button onClick={ingresar} disabled={cargando} className="f-body w-full py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{cargando && <Spinner size={14} />} Ingresar</button>
         </div>
         <p className="f-body text-[11px] text-center mt-4" style={{ color: c.textFaint }}>{role === "chofer" ? "El usuario y contraseña de cada camión los define el administrador desde su panel." : "Se valida contra la base de datos real."}</p>
@@ -938,7 +1013,7 @@ function AdminCalendario({ token }) {
   useEffect(() => { cargar(); }, [cargar]);
 
   const agregar = async () => {
-    if (!fecha) { setError("Elegí una fecha."); return; }
+    if (!fecha) { setError("Elegí una fecha."); mostrarErrorGlobal("Elegí una fecha para continuar."); return; }
     setError(""); setMensaje("");
     try {
       await api("/admin/calendario", { method: "POST", token, body: { fecha, motivo } });
@@ -1134,7 +1209,10 @@ function AdminCamiones({ token }) {
   const eliminarZona = async (id) => { try { await api(`/admin/zonas/${id}`, { method: "DELETE", token }); cargar(false); } catch { setError("No se pudo eliminar la zona."); } };
 
   const agregarCamion = async () => {
-    if (!nuevo.nombre.trim() || !nuevo.choferNombre.trim() || !nuevo.usuario.trim() || !nuevo.password.trim()) { setError("Completá todos los campos del camión nuevo."); return; }
+    if (!nuevo.nombre.trim() || !nuevo.choferNombre.trim() || !nuevo.usuario.trim() || !nuevo.password.trim()) {
+      const mensaje = "Completá todos los campos del camión nuevo.";
+      setError(mensaje); mostrarErrorGlobal(mensaje); return;
+    }
     try { await api("/admin/camiones", { method: "POST", token, body: { nombre: nuevo.nombre.trim(), choferNombre: nuevo.choferNombre.trim(), usuario: nuevo.usuario.trim(), password: nuevo.password.trim() } }); setNuevo({ nombre: "", choferNombre: "", usuario: "", password: "" }); cargar(false); }
     catch (e) { setError(e.message || "No se pudo crear el camión."); }
   };
@@ -1225,7 +1303,7 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
           <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Para cambiar la contraseña, completá los dos campos:</p>
           <Input placeholder="Contraseña actual" type="password" value={passActual} onChange={e => setPassActual(e.target.value)} />
           <Input placeholder="Contraseña nueva" type="password" value={passNueva} onChange={e => setPassNueva(e.target.value)} />
-          {errorPerfil && <p className="f-body text-[11px]" style={{ color: c.danger }}>{errorPerfil}</p>}
+          <ErrorBanner mensaje={errorPerfil} />
           {okPerfil && <p className="f-body text-[11px]" style={{ color: c.success }}>{okPerfil}</p>}
           <button onClick={guardarPerfil} disabled={guardandoPerfil} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{guardandoPerfil && <Spinner size={13} />} Guardar cambios</button>
         </div>
@@ -1238,7 +1316,7 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
           <Input placeholder="Nueva clave (dejar vacío para desactivarla)" type="password" value={claveArea} onChange={e => setClaveArea(e.target.value)} />
           <button onClick={guardarArea} disabled={guardandoArea} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 disabled:opacity-70 shrink-0" style={{ background: c.accent, color: c.bgAlt }}>{guardandoArea && <Spinner size={13} />} Guardar</button>
         </div>
-        {errorArea && <p className="f-body text-[11px] mt-1.5" style={{ color: c.danger }}>{errorArea}</p>}
+        <ErrorBanner mensaje={errorArea} />
         {okArea && <p className="f-body text-[11px] mt-1.5" style={{ color: c.success }}>{okArea}</p>}
       </div>
     </div>
@@ -1343,6 +1421,7 @@ export default function App() {
     <ThemeContext.Provider value={c}>
       <div className={`f-body ${modo === "dark" ? "theme-dark" : "theme-light"}`}>
         {fonts}
+        <ErrorModal />
         {view !== "admin" && <ThemeToggleFlotante modo={modo} setModo={setModo} c={c} />}
         {contenido}
       </div>
