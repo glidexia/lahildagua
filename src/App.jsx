@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
-  Droplet, Droplets, Package, Truck, User, MapPin, Building2, Home, Briefcase, Store,
+  Droplet, Droplets, Package, Truck, User, MapPin, Building2, Store,
   CheckCircle2, XCircle, Clock, LayoutDashboard, Users, ChevronRight, ChevronLeft,
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
@@ -174,14 +174,12 @@ const fonts = (
 );
 
 const PAGOS = ["Efectivo", "Transferencia", "Mercado Pago"];
-// Lo que ve el cliente son 3 botones, pero el catálogo real solo tiene 2 categorías: "hogar" comparte con nadie,
-// "oficina" y "revendedor" comparten el mismo catálogo (el de mayoristas/oficinas).
 const OPCIONES_SEGMENTO = [
-  { id: "hogar", label: "Hogar", categoria: "hogar", Icon: Home, desc: "Para tu casa" },
-  { id: "oficina", label: "Oficina", categoria: "oficina_revendedor", Icon: Briefcase, desc: "Para tu empresa" },
-  { id: "revendedor", label: "Revendedor", categoria: "oficina_revendedor", Icon: Store, desc: "Compra por mayor" },
+  { id: "consumo_personal", label: "Consumo personal", categoria: "consumo_personal", Icon: User, desc: "Agua para tu consumo diario" },
+  { id: "dispenser_frio_calor", label: "Dispenser frío/calor", categoria: "dispenser_frio_calor", Icon: Droplets, desc: "Equipos y servicio de dispenser" },
+  { id: "comercio_reventa", label: "Comercio/revender nuestros productos", categoria: "comercio_reventa", Icon: Store, desc: "Productos y precios para reventa" },
 ];
-const TIPO_DESTINO_POR_SEGMENTO = { hogar: "casa", oficina: "oficina", revendedor: "empresa" };
+const TIPO_DESTINO_POR_SEGMENTO = { consumo_personal: "casa", dispenser_frio_calor: "oficina", comercio_reventa: "empresa" };
 function fmtDate(d) { return d.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "short", day: "numeric", month: "short" }); }
 function formatearFechaEntrega(fecha) {
   if (!fecha) return "próximo día hábil";
@@ -476,7 +474,7 @@ function ClientePortal({ onAccesoInterno }) {
     setEnviando(true); setError("");
     try {
       const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q }));
-      const resp = await api("/public/pedidos", { method: "POST", body: { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "hogar", pago: form.pago, items } });
+      const resp = await api("/public/pedidos", { method: "POST", body: { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, items } });
       setConfirmado(resp);
     } catch (e) { setError(e.message || "No pudimos registrar el pedido."); }
     setEnviando(false);
@@ -1065,7 +1063,7 @@ function AdminCatalogo({ token }) {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
-  const [tab, setTab] = useState("hogar");
+  const [tab, setTab] = useState("consumo_personal");
   const [nuevo, setNuevo] = useState({ nombre: "", precio: "", descripcion: "" });
 
   const cargar = useCallback(() => api("/admin/productos", { token }).then(setProductos).catch(() => setError("No pudimos cargar el catálogo.")).finally(() => setCargando(false)), [token]);
@@ -1105,13 +1103,17 @@ function AdminCatalogo({ token }) {
 
   if (cargando) return <Cargando />;
   const delTab = productos.filter(p => p.categoria === tab);
+  const catalogoActivo = OPCIONES_SEGMENTO.find(op => op.categoria === tab);
 
   return (
     <div className="space-y-4">
       <p className="f-body text-xs" style={{ color: c.textMuted }}>Cada catálogo se ve por separado en la vidriera, según lo que el cliente elija al empezar su pedido.</p>
-      <div className="flex rounded-xl p-1" style={{ background: c.surface, width: "fit-content" }}>
-        <button onClick={() => setTab("hogar")} className="f-body px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === "hogar" ? c.accentSoft : "transparent", color: tab === "hogar" ? c.accent : c.textMuted }}><Home size={13} /> Hogar</button>
-        <button onClick={() => setTab("oficina_revendedor")} className="f-body px-4 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === "oficina_revendedor" ? c.accentSoft : "transparent", color: tab === "oficina_revendedor" ? c.accent : c.textMuted }}><Briefcase size={13} /> Oficina y Revendedor</button>
+      <div className="flex flex-wrap rounded-xl p-1 gap-1" style={{ background: c.surface, width: "fit-content" }}>
+        {OPCIONES_SEGMENTO.map(op => (
+          <button key={op.categoria} onClick={() => setTab(op.categoria)} className="f-body px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === op.categoria ? c.accentSoft : "transparent", color: tab === op.categoria ? c.accent : c.textMuted }}>
+            <op.Icon size={13} /> {op.label}
+          </button>
+        ))}
       </div>
       <ErrorBanner mensaje={error} />
       {mensaje && <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.successSoft }}><CheckCircle2 size={14} color={c.success} /><span className="f-body text-xs" style={{ color: c.success }}>{mensaje}</span></div>}
@@ -1119,7 +1121,7 @@ function AdminCatalogo({ token }) {
       <ListaProductos productos={delTab} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} />
 
       <div className="rounded-2xl p-3.5 flex flex-col gap-2" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
-        <p className="f-body text-xs font-medium" style={{ color: c.textMuted }}>Agregar producto a {tab === "hogar" ? "Hogar" : "Oficina y Revendedor"}</p>
+        <p className="f-body text-xs font-medium" style={{ color: c.textMuted }}>Agregar producto a {catalogoActivo?.label}</p>
         <Input placeholder="Nombre del producto" value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} />
         <Input placeholder="Descripción (opcional)" value={nuevo.descripcion} onChange={e => setNuevo({ ...nuevo, descripcion: e.target.value })} />
         <div className="flex gap-2">
