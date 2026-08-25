@@ -591,7 +591,7 @@ function ClientePortal({ onAccesoInterno }) {
                   <div className="rounded-2xl p-3.5 space-y-3" style={{ background: c.bgAlt, border: `1px solid ${c.border}` }}>
                     <div>
                       <p className="f-body text-xs font-medium" style={{ color: c.text }}>Elegí el día de entrega</p>
-                      <p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Solo aparecen los días habilitados por el administrador para {form.barrio}.</p>
+                      <p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Estas son las próximas fechas disponibles para tu zona.</p>
                     </div>
                     {cargandoDisponibilidad ? <div className="flex items-center gap-2 py-2"><Spinner size={13} /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>Buscando próximos turnos...</span></div> : disponibilidad.length > 0 ? (
                       <div className="flex gap-2 overflow-x-auto pb-1">
