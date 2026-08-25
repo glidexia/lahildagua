@@ -173,7 +173,14 @@ const fonts = (
   `}</style>
 );
 
-const PAGOS = ["Efectivo", "Transferencia", "Mercado Pago"];
+const PAGOS = ["Efectivo", "Transferencia"];
+const DIAS_SEMANA = [
+  { id: 1, label: "Lunes", corto: "Lun" },
+  { id: 2, label: "Martes", corto: "Mar" },
+  { id: 3, label: "Miércoles", corto: "Mié" },
+  { id: 4, label: "Jueves", corto: "Jue" },
+  { id: 5, label: "Viernes", corto: "Vie" },
+];
 const OPCIONES_SEGMENTO = [
   { id: "consumo_personal", label: "Consumo personal", categoria: "consumo_personal", Icon: User, desc: "Agua para tu consumo diario" },
   { id: "dispenser_frio_calor", label: "Dispenser frío/calor", categoria: "dispenser_frio_calor", Icon: Droplets, desc: "Equipos y servicio de dispenser" },
@@ -190,6 +197,10 @@ function formatearFechaEntrega(fecha) {
     month: "long",
   });
   return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+function formatearFranja(horaDesde, horaHasta) {
+  if (!horaDesde || !horaHasta) return "Horario a coordinar";
+  return `${horaDesde} a ${horaHasta} aprox.`;
 }
 function crearDias(referencia = new Date()) {
   const desplazada = dias => new Date(referencia.getTime() + dias * 24 * 60 * 60 * 1000);
@@ -435,32 +446,43 @@ function ClientePortal({ onAccesoInterno }) {
   const [step, setStep] = useState(0); // 0: segmento, 1: productos, 2: datos, 3: revisión
   const [segmento, setSegmento] = useState(null); // { id, categoria, label }
   const [cant, setCant] = useState({});
-  const [form, setForm] = useState({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo" });
+  const [form, setForm] = useState({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" });
   const [confirmado, setConfirmado] = useState(null);
   const [enviando, setEnviando] = useState(false);
-  const [fechaEstimada, setFechaEstimada] = useState(null);
+  const [disponibilidad, setDisponibilidad] = useState([]);
+  const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
-        const [prods, zs, proxima] = await Promise.all([api("/public/productos"), api("/public/zonas"), api("/public/proxima-entrega")]);
+        const [prods, zs] = await Promise.all([api("/public/productos"), api("/public/zonas")]);
         setProductos(prods);
-        setZonas(zs.map(z => ({ barrio: z.barrio, camionId: z.camionId, nombre: z.camionNombre, color: colorDeCamion(z.camionId) })));
-        setFechaEstimada(proxima.fechaEntrega);
+        setZonas(zs.map(z => ({ barrio: z.barrio, camionId: z.camionId, nombre: z.camionNombre, color: colorDeCamion(z.camionId), diasEntrega: z.diasEntrega || [] })));
       } catch (e) { setError("No pudimos cargar el catálogo. Refrescá la página."); }
       setCargando(false);
     })();
   }, []);
 
   useEffect(() => {
-    if (step !== 3) return;
-    api("/public/proxima-entrega").then(data => setFechaEstimada(data.fechaEntrega)).catch(() => {});
-  }, [step]);
+    if (!form.barrio) {
+      setDisponibilidad([]);
+      return;
+    }
+    let vigente = true;
+    setCargandoDisponibilidad(true);
+    api(`/public/disponibilidad?barrio=${encodeURIComponent(form.barrio)}`)
+      .then(data => { if (vigente) setDisponibilidad(data.disponibilidad || []); })
+      .catch(() => { if (vigente) setDisponibilidad([]); })
+      .finally(() => { if (vigente) setCargandoDisponibilidad(false); });
+    return () => { vigente = false; };
+  }, [form.barrio]);
 
   const productosDelSegmento = productos.filter(p => !segmento || p.categoria === segmento.categoria);
   const totalItems = Object.values(cant).reduce((a, b) => a + b, 0);
   const totalPrecio = Object.entries(cant).reduce((sum, [id, q]) => sum + (productos.find(p => p.id === Number(id))?.precio ? Number(productos.find(p => p.id === Number(id)).precio) * q : 0), 0);
   const camionAsignado = useMemo(() => { const z = zonas.find(x => x.barrio === form.barrio); return z ? { id: z.camionId, nombre: z.nombre, color: z.color } : null; }, [form.barrio, zonas]);
+  const fechaElegida = disponibilidad.find(d => d.fecha === form.fechaEntrega);
+  const horarioElegido = fechaElegida?.horarios.find(h => h.id === Number(form.horarioZonaId));
   const setQty = (id, delta) => setCant(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }));
 
   const elegirSegmento = (op) => {
@@ -474,9 +496,17 @@ function ClientePortal({ onAccesoInterno }) {
     setEnviando(true); setError("");
     try {
       const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q }));
-      const resp = await api("/public/pedidos", { method: "POST", body: { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, items } });
+      const resp = await api("/public/pedidos", { method: "POST", body: { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, notas: form.notas, fechaEntrega: form.fechaEntrega, horarioZonaId: Number(form.horarioZonaId), items } });
       setConfirmado(resp);
-    } catch (e) { setError(e.message || "No pudimos registrar el pedido."); }
+    } catch (e) {
+      setError(e.message || "No pudimos registrar el pedido.");
+      setStep(2);
+      if (form.barrio) {
+        api(`/public/disponibilidad?barrio=${encodeURIComponent(form.barrio)}`)
+          .then(data => setDisponibilidad(data.disponibilidad || []))
+          .catch(() => {});
+      }
+    }
     setEnviando(false);
   };
 
@@ -500,11 +530,13 @@ function ClientePortal({ onAccesoInterno }) {
               <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Cliente</span><span style={{ color: c.text }}>{form.nombre || "—"}</span></div>
               <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Dirección</span><span style={{ color: c.text }}>{form.calle}, {form.barrio}</span></div>
               <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Entrega</span><span style={{ color: c.text }}>{formatearFechaEntrega(confirmado.fechaEntrega)}</span></div>
+              <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Franja</span><span style={{ color: c.text }}>{formatearFranja(confirmado.horaDesde, confirmado.horaHasta)}</span></div>
               <div className="flex justify-between f-body text-sm items-center"><span style={{ color: c.textMuted }}>Camión asignado</span><CamionChip camion={camionAsignado} small /></div>
+              {form.notas && <div className="f-body text-sm"><span className="block mb-1" style={{ color: c.textMuted }}>Notas</span><span style={{ color: c.text }}>{form.notas}</span></div>}
               <div className="h-px" style={{ background: c.border }} />
               <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
             </div>
-            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setForm({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo" }); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
+            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setDisponibilidad([]); setForm({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" }); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
           </div>
         ) : (
           <div className="max-w-md mx-auto px-4 py-6">
@@ -550,11 +582,42 @@ function ClientePortal({ onAccesoInterno }) {
                 <Input placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
                 <Input placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
                 <Input placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} />
-                <select value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value })} className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}>
+                <select value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}>
                   <option value="">Barrio (define tu zona de reparto)</option>
                   {zonas.map(z => <option key={z.barrio} value={z.barrio}>{z.barrio}</option>)}
                 </select>
                 {form.barrio && <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}><MapPin size={14} color={c.accent} /><span className="f-body text-xs" style={{ color: c.text }}>Tu zona corresponde a</span><CamionChip camion={camionAsignado} small /></div>}
+                {form.barrio && (
+                  <div className="rounded-2xl p-3.5 space-y-3" style={{ background: c.bgAlt, border: `1px solid ${c.border}` }}>
+                    <div>
+                      <p className="f-body text-xs font-medium" style={{ color: c.text }}>Elegí el día de entrega</p>
+                      <p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Solo aparecen los días habilitados por el administrador para {form.barrio}.</p>
+                    </div>
+                    {cargandoDisponibilidad ? <div className="flex items-center gap-2 py-2"><Spinner size={13} /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>Buscando próximos turnos...</span></div> : disponibilidad.length > 0 ? (
+                      <div className="flex gap-2 overflow-x-auto pb-1">
+                        {disponibilidad.slice(0, 10).map(d => (
+                          <button key={d.fecha} onClick={() => setForm({ ...form, fechaEntrega: d.fecha, horarioZonaId: "" })} className="f-body shrink-0 rounded-xl px-3 py-2 text-left" style={{ background: form.fechaEntrega === d.fecha ? c.accentSoft : c.surface, border: `1px solid ${form.fechaEntrega === d.fecha ? c.accent : c.border}` }}>
+                            <span className="block text-xs font-medium" style={{ color: form.fechaEntrega === d.fecha ? c.accent : c.text }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", weekday: "short", day: "numeric" })}</span>
+                            <span className="block text-[10px] mt-0.5" style={{ color: c.textFaint }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", month: "short" })}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : <p className="f-body text-[11px] px-3 py-2 rounded-lg" style={{ color: c.amber, background: c.amberSoft }}>No hay turnos disponibles para este barrio. Escribinos para coordinar.</p>}
+                    {fechaElegida && (
+                      <div>
+                        <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Franja horaria aproximada</p>
+                        <div className="flex flex-wrap gap-2">
+                          {fechaElegida.horarios.map(h => (
+                            <button key={h.id} onClick={() => setForm({ ...form, horarioZonaId: h.id })} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: Number(form.horarioZonaId) === h.id ? c.accentSoft : c.surface, border: `1px solid ${Number(form.horarioZonaId) === h.id ? c.accent : c.border}`, color: Number(form.horarioZonaId) === h.id ? c.accent : c.textMuted }}>
+                              {formatearFranja(h.horaDesde, h.horaHasta)}{h.cupoDisponible <= 2 ? ` · ${h.cupoDisponible} cupo${h.cupoDisponible === 1 ? "" : "s"}` : ""}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>La hora es aproximada: el chofer organiza el recorrido dentro de esta franja.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div>
                   <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Tipo de destino</p>
                   <div className="f-body w-full px-4 py-3 rounded-xl text-sm flex items-center justify-between" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
@@ -563,19 +626,28 @@ function ClientePortal({ onAccesoInterno }) {
                   </div>
                 </div>
                 <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => setForm({ ...form, pago: p })} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>El pago se coordina con el chofer, no se procesa en la web.</p></div>
-                <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.barrio || !form.calle} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
+                <div>
+                  <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Notas para la entrega <span style={{ color: c.textFaint }}>(opcional)</span></p>
+                  <textarea value={form.notas} maxLength={500} onChange={e => setForm({ ...form, notas: e.target.value })} rows={3} placeholder="Ej.: tocar timbre 2, portón negro, llamar antes de llegar..." className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+                  <p className="f-body text-[10px] text-right mt-0.5" style={{ color: c.textFaint }}>{form.notas.length}/500</p>
+                </div>
+                <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
               </div>
             )}
 
             {step === 3 && (
               <div className="space-y-4">
                 <DeliveryMap barrio={form.barrio} direccion={form.calle} />
+                <div className="rounded-2xl p-4 space-y-2" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}>
+                  <div className="flex items-start gap-2"><CalendarClock size={16} color={c.accent} className="mt-0.5 shrink-0" /><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>{formatearFechaEntrega(form.fechaEntrega)}</p><p className="f-body text-xs mt-0.5" style={{ color: c.textMuted }}>{formatearFranja(horarioElegido?.horaDesde, horarioElegido?.horaHasta)} · horario aproximado</p></div></div>
+                  {form.notas && <div className="f-body text-xs pt-2" style={{ borderTop: `1px solid ${c.borderSoft}`, color: c.textMuted }}><b style={{ color: c.text }}>Notas:</b> {form.notas}</div>}
+                </div>
                 <div className="rounded-2xl p-4 space-y-2.5" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
                   {Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; return <div key={id} className="flex justify-between f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}</span><span className="f-mono" style={{ color: c.textMuted }}>${(Number(p.precio) * q).toLocaleString("es-AR")}</span></div>; })}
                   <div className="h-px my-1" style={{ background: c.border }} />
                   <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span></div>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><CalendarClock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>Entrega estimada: <b>{formatearFechaEntrega(fechaEstimada)}</b> con {camionAsignado?.nombre}</span></div>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><Clock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>El chofer organiza su recorrido dentro de la franja elegida; te avisaremos antes de llegar.</span></div>
                 <div className="flex gap-2"><button onClick={() => setStep(2)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={enviando} onClick={confirmar} className="f-body flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{enviando && <Spinner size={14} />} Confirmar pedido</button></div>
               </div>
             )}
@@ -755,7 +827,7 @@ function ChoferPanel({ session, onLogout }) {
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-start gap-2.5">
                       <span className="f-mono text-[11px] font-medium shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5" style={{ background: `${camionColor}22`, color: camionColor }}>{o.parada}</span>
-                      <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>{o.cliente}</p><p className="f-body text-xs flex items-center gap-1 mt-0.5" style={{ color: c.textFaint }}><MapPin size={11} /> {o.direccion}</p></div>
+                      <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>{o.cliente}</p><p className="f-body text-xs flex items-center gap-1 mt-0.5" style={{ color: c.textFaint }}><MapPin size={11} /> {o.direccion}</p>{o.horaDesde && <p className="f-body text-[11px] flex items-center gap-1 mt-1" style={{ color: c.accent }}><Clock size={11} /> {formatearFranja(o.horaDesde, o.horaHasta)}</p>}</div>
                     </div>
                     <EstadoBadge estado={o.estado} />
                   </div>
@@ -767,6 +839,7 @@ function ChoferPanel({ session, onLogout }) {
                   {o.estado === "entregado" && o.pagoConfirmado && (
                     <p className="f-body text-[11px] mb-2 flex items-center gap-1" style={{ color: c.success }}><DollarSign size={11} /> Cobrado con: {o.pagoConfirmado}</p>
                   )}
+                  {o.notas && <p className="f-body text-[11px] mb-3 px-2.5 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.text }}><b>Nota:</b> {o.notas}</p>}
 
                   {diaEditable && o.estado === "pendiente" && confirmandoPago !== o.id && (
                     <div className="flex gap-2">
@@ -942,14 +1015,16 @@ function AdminPedidos({ token, camiones }) {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full f-body text-xs">
-                    <thead><tr>{["Parada", "Cliente", "Barrio", "Día", "Pago", "Total", "Camión", "Estado"].map(h => <th key={h} className="text-left px-4 py-2 font-medium whitespace-nowrap" style={{ color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{h}</th>)}</tr></thead>
+                    <thead><tr>{["Parada", "Cliente", "Barrio", "Día", "Horario", "Notas", "Pago", "Total", "Camión", "Estado"].map(h => <th key={h} className="text-left px-4 py-2 font-medium whitespace-nowrap" style={{ color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {items.map(o => (
                         <tr key={o.id} style={{ borderTop: `1px solid ${c.borderSoft}` }}>
                           <td className="px-4 py-2.5"><span className="f-mono text-[11px] w-5 h-5 rounded-full inline-flex items-center justify-center" style={{ background: `${cm.color}22`, color: cm.color }}>{o.parada}</span></td>
                           <td className="px-4 py-2.5" style={{ color: c.text }}>{o.cliente}</td>
                           <td className="px-4 py-2.5" style={{ color: c.textMuted }}>{o.barrio}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{new Date(o.fechaEntrega).toLocaleDateString("es-AR")}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{new Date(o.fechaEntrega).toLocaleDateString("es-AR", { timeZone: "UTC" })}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: o.horaDesde ? c.accent : c.textFaint }}>{formatearFranja(o.horaDesde, o.horaHasta)}</td>
+                          <td className="px-4 py-2.5 max-w-[220px]" style={{ color: c.textMuted }}><span className="line-clamp-2" title={o.notas || ""}>{o.notas || "—"}</span></td>
                           <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{o.pagoConfirmado ? <span style={{ color: c.success }}>{o.pagoConfirmado} ✓</span> : (o.pago || "—")}</td>
                           <td className="f-mono px-4 py-2.5" style={{ color: c.accent }}>${Number(o.total || 0).toLocaleString("es-AR")}</td>
                           <td className="px-4 py-2.5">
@@ -1329,6 +1404,65 @@ function ZonasOperativas({ zonas, onAgregar, onRenombrar, onEliminar }) {
   );
 }
 
+function AgendaZonas({ zonas, onAgregarHorario, onEliminarHorario }) {
+  const c = useTheme();
+  const [zonaId, setZonaId] = useState("");
+  const [nuevo, setNuevo] = useState({ diaSemana: "2", horaDesde: "18:00", horaHasta: "20:00", cupoMaximo: "6" });
+
+  useEffect(() => {
+    if (!zonas.length) return setZonaId("");
+    if (!zonas.some(z => String(z.id) === String(zonaId))) setZonaId(String(zonas[0].id));
+  }, [zonas, zonaId]);
+
+  const zona = zonas.find(z => String(z.id) === String(zonaId));
+  const agregar = () => {
+    if (!zona) return;
+    onAgregarHorario(zona.id, {
+      diaSemana: Number(nuevo.diaSemana),
+      horaDesde: nuevo.horaDesde,
+      horaHasta: nuevo.horaHasta,
+      cupoMaximo: Number(nuevo.cupoMaximo),
+    });
+  };
+
+  return (
+    <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+      <div className="flex items-start gap-2 mb-3">
+        <CalendarClock size={16} color={c.accent} className="mt-0.5 shrink-0" />
+        <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Días y franjas de entrega por barrio</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>El cliente solo podrá elegir estas opciones. Cada franja es aproximada y tiene un cupo máximo para cuidar la ruta.</p></div>
+      </div>
+      {zonas.length === 0 ? <p className="f-body text-xs" style={{ color: c.textFaint }}>Primero agregá una zona operativa.</p> : (
+        <div className="space-y-3">
+          <select value={zonaId} onChange={e => setZonaId(e.target.value)} className="f-body w-full px-3 py-2.5 rounded-xl text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }}>
+            {zonas.map(z => <option key={z.id} value={z.id}>{z.barrio}{z.camionNombre ? ` · ${z.camionNombre}` : " · sin camión"}</option>)}
+          </select>
+          <div className="space-y-1.5">
+            {(zona?.horarios || []).map(h => (
+              <div key={h.id} className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.bgAlt, border: `1px solid ${c.borderSoft}` }}>
+                <span className="f-body text-xs font-medium min-w-[64px]" style={{ color: c.text }}>{DIAS_SEMANA.find(d => d.id === h.diaSemana)?.label}</span>
+                <span className="f-body text-xs" style={{ color: c.accent }}>{formatearFranja(h.horaDesde, h.horaHasta)}</span>
+                <span className="f-body text-[10px] ml-auto whitespace-nowrap" style={{ color: c.textFaint }}>hasta {h.cupoMaximo} pedidos</span>
+                <button onClick={() => onEliminarHorario(h.id)} className="p-1.5 rounded-lg shrink-0" style={{ background: c.dangerSoft }} title="Quitar franja"><Trash2 size={12} color={c.danger} /></button>
+              </div>
+            ))}
+            {(zona?.horarios || []).length === 0 && <p className="f-body text-[11px] px-3 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.amber }}>Este barrio todavía no tiene días de entrega.</p>}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3 rounded-xl" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
+            <select value={nuevo.diaSemana} onChange={e => setNuevo({ ...nuevo, diaSemana: e.target.value })} className="f-body px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }}>
+              {DIAS_SEMANA.map(d => <option key={d.id} value={d.id}>{d.label}</option>)}
+            </select>
+            <input type="time" value={nuevo.horaDesde} onChange={e => setNuevo({ ...nuevo, horaDesde: e.target.value })} className="f-body px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} title="Hora desde" />
+            <input type="time" value={nuevo.horaHasta} onChange={e => setNuevo({ ...nuevo, horaHasta: e.target.value })} className="f-body px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} title="Hora hasta" />
+            <input type="number" min="1" max="100" value={nuevo.cupoMaximo} onChange={e => setNuevo({ ...nuevo, cupoMaximo: e.target.value })} className="f-body px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} placeholder="Cupo" title="Cupo máximo" />
+            <button onClick={agregar} className="f-body px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1" style={{ background: c.accent, color: c.bgAlt }}><Plus size={13} /> Agregar</button>
+          </div>
+          <p className="f-body text-[10px]" style={{ color: c.textFaint }}>Ejemplo: martes de 18:00 a 20:00 con cupo 6 permite organizar hasta seis domicilios dentro de esa franja, sin prometer una hora exacta.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminCamiones({ token }) {
   const c = useTheme();
   const [camiones, setCamiones] = useState([]);
@@ -1362,6 +1496,12 @@ function AdminCamiones({ token }) {
   const agregarZona = async (barrio) => { try { await api("/admin/zonas", { method: "POST", token, body: { barrio } }); cargar(false); } catch (e) { setError(e.message || "No se pudo crear la zona."); } };
   const renombrarZona = async (id, barrio) => { try { await api(`/admin/zonas/${id}`, { method: "PATCH", token, body: { barrio } }); cargar(false); } catch (e) { setError(e.message || "No se pudo renombrar."); } };
   const eliminarZona = async (id) => { try { await api(`/admin/zonas/${id}`, { method: "DELETE", token }); cargar(false); } catch { setError("No se pudo eliminar la zona."); } };
+  const agregarHorario = async (zonaId, datos) => { try { await api(`/admin/zonas/${zonaId}/horarios`, { method: "POST", token, body: datos }); cargar(false); } catch (e) { setError(e.message || "No se pudo agregar la franja."); } };
+  const eliminarHorario = async (id) => {
+    const confirmado = await confirmarAccion({ titulo: "¿Quitar esta franja?", mensaje: "Los pedidos ya confirmados conservarán la fecha y el horario aproximado. La opción dejará de aparecer para pedidos nuevos.", textoConfirmar: "Sí, quitar" });
+    if (!confirmado) return;
+    try { await api(`/admin/horarios/${id}`, { method: "DELETE", token }); cargar(false); } catch (e) { setError(e.message || "No se pudo quitar la franja."); }
+  };
 
   const agregarCamion = async () => {
     if (!nuevo.nombre.trim() || !nuevo.choferNombre.trim() || !nuevo.usuario.trim() || !nuevo.password.trim()) {
@@ -1382,6 +1522,7 @@ function AdminCamiones({ token }) {
       <ErrorBanner mensaje={error} />
 
       <ZonasOperativas zonas={zonas} onAgregar={agregarZona} onRenombrar={renombrarZona} onEliminar={eliminarZona} />
+      <AgendaZonas zonas={zonas} onAgregarHorario={agregarHorario} onEliminarHorario={eliminarHorario} />
 
       <div className="grid sm:grid-cols-2 gap-3">
         {camiones.map(cm => <CamionCard key={cm.id} cm={cm} zonas={zonas} onGuardar={guardarCamion} onEliminar={eliminarCamion} onAsignarZona={asignarZona} onQuitarZona={quitarZona} />)}
