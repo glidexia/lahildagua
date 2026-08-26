@@ -4,7 +4,8 @@ import {
   CheckCircle2, XCircle, Clock, LayoutDashboard, Users, ChevronRight, ChevronLeft,
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
-  Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign
+  Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
+  ImagePlus, Upload, Eye, Landmark, X, FileCheck2
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -46,12 +47,13 @@ function mensajeAmigableApi(status, data, path) {
 }
 
 async function api(path, { method = "GET", body, token } = {}) {
+  const esFormulario = typeof FormData !== "undefined" && body instanceof FormData;
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: { ...(!esFormulario ? { "Content-Type": "application/json" } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body !== undefined ? (esFormulario ? body : JSON.stringify(body)) : undefined,
     });
   } catch {
     const mensaje = "No pudimos conectarnos. Revisá tu conexión e intentá nuevamente.";
@@ -69,6 +71,26 @@ async function api(path, { method = "GET", body, token } = {}) {
     throw new Error(mensaje);
   }
   return data;
+}
+
+async function apiBlob(path, token) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  } catch {
+    const mensaje = "No pudimos descargar el comprobante. Revisá tu conexión.";
+    mostrarErrorGlobal(mensaje);
+    throw new Error(mensaje);
+  }
+  if (!res.ok) {
+    let data = {};
+    try { data = await res.json(); } catch {}
+    const mensaje = mensajeAmigableApi(res.status, data, path);
+    if (res.status === 401) window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    mostrarErrorGlobal(mensaje);
+    throw new Error(mensaje);
+  }
+  return res.blob();
 }
 function decodeJwt(token) {
   try {
@@ -318,6 +340,27 @@ function ConfirmModal() {
     </div>
   );
 }
+function ComprobanteModal({ url, onClose }) {
+  const c = useTheme();
+  useEffect(() => {
+    if (!url) return;
+    const cerrar = (evento) => { if (evento.key === "Escape") onClose(); };
+    window.addEventListener("keydown", cerrar);
+    return () => window.removeEventListener("keydown", cerrar);
+  }, [url, onClose]);
+  if (!url) return null;
+  return (
+    <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }} className="modal-backdrop-in fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 1002, background: "rgba(2, 8, 23, 0.82)", backdropFilter: "blur(6px)" }}>
+      <div role="dialog" aria-modal="true" aria-label="Comprobante de transferencia" className="modal-card-in relative w-full max-w-2xl rounded-2xl p-3 shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <div className="flex items-center justify-between px-2 pb-3">
+          <div className="flex items-center gap-2"><FileCheck2 size={18} color={c.accent} /><span className="f-display text-base font-semibold" style={{ color: c.text }}>Comprobante de transferencia</span></div>
+          <button onClick={onClose} className="p-2 rounded-xl" style={{ background: c.surfaceAlt }} aria-label="Cerrar"><X size={17} color={c.textMuted} /></button>
+        </div>
+        <img src={url} alt="Comprobante de transferencia" className="block w-full max-h-[75vh] object-contain rounded-xl" style={{ background: c.bg }} />
+      </div>
+    </div>
+  );
+}
 function EstadoBadge({ estado }) {
   const c = useTheme();
   const map = {
@@ -447,6 +490,8 @@ function ClientePortal({ onAccesoInterno }) {
   const [segmento, setSegmento] = useState(null); // { id, categoria, label }
   const [cant, setCant] = useState({});
   const [form, setForm] = useState({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" });
+  const [datosTransferencia, setDatosTransferencia] = useState({ titular: "", banco: "", alias: "", cbu: "", cuit: "", configurados: false });
+  const [comprobante, setComprobante] = useState(null);
   const [confirmado, setConfirmado] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [disponibilidad, setDisponibilidad] = useState([]);
@@ -455,9 +500,10 @@ function ClientePortal({ onAccesoInterno }) {
   useEffect(() => {
     (async () => {
       try {
-        const [prods, zs] = await Promise.all([api("/public/productos"), api("/public/zonas")]);
+        const [prods, zs, datosPago] = await Promise.all([api("/public/productos"), api("/public/zonas"), api("/public/configuracion-pago")]);
         setProductos(prods);
         setZonas(zs.map(z => ({ barrio: z.barrio, camionId: z.camionId, nombre: z.camionNombre, color: colorDeCamion(z.camionId), diasEntrega: z.diasEntrega || [] })));
+        setDatosTransferencia(datosPago);
       } catch (e) { setError("No pudimos cargar el catálogo. Refrescá la página."); }
       setCargando(false);
     })();
@@ -496,7 +542,15 @@ function ClientePortal({ onAccesoInterno }) {
     setEnviando(true); setError("");
     try {
       const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q }));
-      const resp = await api("/public/pedidos", { method: "POST", body: { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, notas: form.notas, fechaEntrega: form.fechaEntrega, horarioZonaId: Number(form.horarioZonaId), items } });
+      const pedido = { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, notas: form.notas, fechaEntrega: form.fechaEntrega, horarioZonaId: Number(form.horarioZonaId), items };
+      let body = pedido;
+      if (form.pago === "Transferencia") {
+        const multipart = new FormData();
+        multipart.append("pedido", JSON.stringify(pedido));
+        multipart.append("comprobante", comprobante);
+        body = multipart;
+      }
+      const resp = await api("/public/pedidos", { method: "POST", body });
       setConfirmado(resp);
     } catch (e) {
       setError(e.message || "No pudimos registrar el pedido.");
@@ -536,7 +590,7 @@ function ClientePortal({ onAccesoInterno }) {
               <div className="h-px" style={{ background: c.border }} />
               <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
             </div>
-            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setDisponibilidad([]); setForm({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" }); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
+            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setDisponibilidad([]); setComprobante(null); setForm({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" }); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
           </div>
         ) : (
           <div className="max-w-md mx-auto px-4 py-6">
@@ -563,7 +617,9 @@ function ClientePortal({ onAccesoInterno }) {
                 <button onClick={() => setStep(0)} className="f-body flex items-center gap-1 text-xs mb-1" style={{ color: c.textFaint }}><ChevronLeft size={13} /> {segmento?.label}</button>
                 {productosDelSegmento.map(p => (
                   <div key={p.id} className="rounded-2xl p-4 flex items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}><Droplet size={18} color={c.accent} /></div>
+                    <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.accentSoft }}>
+                      {p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" loading="lazy" /> : <Droplet size={18} color={c.accent} />}
+                    </div>
                     <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{p.descripcion}</p><p className="f-mono text-xs mt-0.5" style={{ color: c.accent }}>${Number(p.precio).toLocaleString("es-AR")}</p></div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => setQty(p.id, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={13} color={c.textMuted} /></button>
@@ -625,13 +681,33 @@ function ClientePortal({ onAccesoInterno }) {
                     <span className="text-[11px]" style={{ color: c.textFaint }}>Elegido al inicio</span>
                   </div>
                 </div>
-                <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => setForm({ ...form, pago: p })} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>El pago se coordina con el chofer, no se procesa en la web.</p></div>
+                <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => { setForm({ ...form, pago: p }); if (p !== "Transferencia") setComprobante(null); }} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{form.pago === "Transferencia" ? "Transferí el total y adjuntá la captura para que podamos verificarla." : "El pago en efectivo se coordina con el chofer."}</p></div>
+                {form.pago === "Transferencia" && (
+                  <div className="rounded-2xl p-4 space-y-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}44` }}>
+                    <div className="flex items-center gap-2"><Landmark size={17} color={c.accent} /><p className="f-body text-sm font-medium" style={{ color: c.text }}>Datos para transferir</p></div>
+                    {datosTransferencia.configurados ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        {datosTransferencia.titular && <div><span className="block" style={{ color: c.textFaint }}>Titular</span><span className="f-body" style={{ color: c.text }}>{datosTransferencia.titular}</span></div>}
+                        {datosTransferencia.banco && <div><span className="block" style={{ color: c.textFaint }}>Banco</span><span className="f-body" style={{ color: c.text }}>{datosTransferencia.banco}</span></div>}
+                        {datosTransferencia.alias && <div><span className="block" style={{ color: c.textFaint }}>Alias</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.alias}</span></div>}
+                        {datosTransferencia.cbu && <div><span className="block" style={{ color: c.textFaint }}>CBU/CVU</span><span className="f-mono break-all" style={{ color: c.text }}>{datosTransferencia.cbu}</span></div>}
+                        {datosTransferencia.cuit && <div><span className="block" style={{ color: c.textFaint }}>CUIT</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.cuit}</span></div>}
+                      </div>
+                    ) : <p className="f-body text-xs" style={{ color: c.amber }}>Los datos todavía no están publicados. Escribinos por WhatsApp antes de confirmar.</p>}
+                    <label className="f-body flex items-center justify-center gap-2 w-full px-3 py-3 rounded-xl text-xs font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobante ? c.success : c.accent}`, color: comprobante ? c.success : c.accent }}>
+                      {comprobante ? <FileCheck2 size={16} /> : <Upload size={16} />}
+                      <span className="truncate">{comprobante ? comprobante.name : "Subir captura del pago"}</span>
+                      <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={e => setComprobante(e.target.files?.[0] || null)} />
+                    </label>
+                    <p className="f-body text-[10px]" style={{ color: c.textFaint }}>JPG, PNG o WebP · máximo 5 MB.</p>
+                  </div>
+                )}
                 <div>
                   <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Notas para la entrega <span style={{ color: c.textFaint }}>(opcional)</span></p>
                   <textarea value={form.notas} maxLength={500} onChange={e => setForm({ ...form, notas: e.target.value })} rows={3} placeholder="Ej.: tocar timbre 2, portón negro, llamar antes de llegar..." className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
                   <p className="f-body text-[10px] text-right mt-0.5" style={{ color: c.textFaint }}>{form.notas.length}/500</p>
                 </div>
-                <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
+                <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId || (form.pago === "Transferencia" && (!datosTransferencia.configurados || !comprobante))} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
               </div>
             )}
 
@@ -646,6 +722,7 @@ function ClientePortal({ onAccesoInterno }) {
                   {Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; return <div key={id} className="flex justify-between f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}</span><span className="f-mono" style={{ color: c.textMuted }}>${(Number(p.precio) * q).toLocaleString("es-AR")}</span></div>; })}
                   <div className="h-px my-1" style={{ background: c.border }} />
                   <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span></div>
+                  <div className="flex justify-between f-body text-xs pt-1"><span style={{ color: c.textMuted }}>Pago</span><span style={{ color: c.text }}>{form.pago}{form.pago === "Transferencia" ? " · comprobante adjunto" : ""}</span></div>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><Clock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>El chofer organiza su recorrido dentro de la franja elegida; te avisaremos antes de llegar.</span></div>
                 <div className="flex gap-2"><button onClick={() => setStep(2)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={enviando} onClick={confirmar} className="f-body flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{enviando && <Spinner size={14} />} Confirmar pedido</button></div>
@@ -957,6 +1034,22 @@ function AdminPedidos({ token, camiones }) {
   const [grupos, setGrupos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [comprobanteUrl, setComprobanteUrl] = useState("");
+  const [abriendoComprobante, setAbriendoComprobante] = useState(null);
+
+  const cerrarComprobante = useCallback(() => {
+    setComprobanteUrl(actual => { if (actual) URL.revokeObjectURL(actual); return ""; });
+  }, []);
+  useEffect(() => () => cerrarComprobante(), [cerrarComprobante]);
+
+  const abrirComprobante = async (id) => {
+    setAbriendoComprobante(id);
+    try {
+      const blob = await apiBlob(`/admin/pedidos/${id}/comprobante`, token);
+      cerrarComprobante();
+      setComprobanteUrl(URL.createObjectURL(blob));
+    } finally { setAbriendoComprobante(null); }
+  };
 
   const cargar = useCallback(async (mostrarSpinner) => {
     if (mostrarSpinner) setCargando(true);
@@ -987,6 +1080,7 @@ function AdminPedidos({ token, camiones }) {
 
   return (
     <div className="space-y-4">
+      <ComprobanteModal url={comprobanteUrl} onClose={cerrarComprobante} />
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}>
         <ArrowLeftRight size={14} color={c.accent} />
         <p className="f-body text-xs" style={{ color: c.text }}>Los pedidos vienen agrupados por camión y ordenados como hoja de ruta desde el servidor. Reasignalos desde el selector de cada fila.</p>
@@ -1025,7 +1119,7 @@ function AdminPedidos({ token, camiones }) {
                           <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{new Date(o.fechaEntrega).toLocaleDateString("es-AR", { timeZone: "UTC" })}</td>
                           <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: o.horaDesde ? c.accent : c.textFaint }}>{formatearFranja(o.horaDesde, o.horaHasta)}</td>
                           <td className="px-4 py-2.5 max-w-[220px]" style={{ color: c.textMuted }}><span className="line-clamp-2" title={o.notas || ""}>{o.notas || "—"}</span></td>
-                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{o.pagoConfirmado ? <span style={{ color: c.success }}>{o.pagoConfirmado} ✓</span> : (o.pago || "—")}</td>
+                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}><div className="flex items-center gap-2"><span>{o.pagoConfirmado ? <span style={{ color: c.success }}>{o.pagoConfirmado} ✓</span> : (o.pago || "—")}</span>{o.tieneComprobante && <button onClick={() => abrirComprobante(o.id)} disabled={abriendoComprobante === o.id} className="f-body inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium disabled:opacity-60" style={{ background: c.accentSoft, color: c.accent }} title="Ver captura del pago">{abriendoComprobante === o.id ? <Spinner size={11} /> : <Eye size={11} />} Ver</button>}</div></td>
                           <td className="f-mono px-4 py-2.5" style={{ color: c.accent }}>${Number(o.total || 0).toLocaleString("es-AR")}</td>
                           <td className="px-4 py-2.5">
                             <div className="flex items-center gap-1.5">
@@ -1057,6 +1151,22 @@ function AdminClientes({ token }) {
   const [lista, setLista] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [comprobanteUrl, setComprobanteUrl] = useState("");
+  const [abriendoComprobante, setAbriendoComprobante] = useState(null);
+
+  const cerrarComprobante = useCallback(() => {
+    setComprobanteUrl(actual => { if (actual) URL.revokeObjectURL(actual); return ""; });
+  }, []);
+  useEffect(() => () => cerrarComprobante(), [cerrarComprobante]);
+
+  const abrirComprobante = async (pedidoId) => {
+    setAbriendoComprobante(pedidoId);
+    try {
+      const blob = await apiBlob(`/admin/pedidos/${pedidoId}/comprobante`, token);
+      cerrarComprobante();
+      setComprobanteUrl(URL.createObjectURL(blob));
+    } finally { setAbriendoComprobante(null); }
+  };
 
   useEffect(() => {
     setCargando(true);
@@ -1072,6 +1182,7 @@ function AdminClientes({ token }) {
 
   return (
     <div className="space-y-4">
+      <ComprobanteModal url={comprobanteUrl} onClose={cerrarComprobante} />
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" color={c.textFaint} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre..." className="f-body w-full pl-8 pr-3 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
         <button onClick={() => setOrden(orden === "desc" ? "asc" : "desc")} className="f-body flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted, border: `1px solid ${c.border}` }}><ArrowUpDown size={12} /> Consumo</button>
@@ -1096,7 +1207,7 @@ function AdminClientes({ token }) {
                     <td className="f-mono px-4 py-2.5" style={{ color: c.text }}>{cl.cantidadPedidos}</td>
                     <td className="f-mono px-4 py-2.5" style={{ color: c.accent }}>${Number(cl.totalGastado).toLocaleString("es-AR")}</td>
                     <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{cl.ultimoPedido ? new Date(cl.ultimoPedido).toLocaleDateString("es-AR") : "—"}</td>
-                    <td className="px-4 py-2.5" style={{ color: c.textMuted }}>{cl.pago}</td>
+                    <td className="px-4 py-2.5" style={{ color: c.textMuted }}><div className="flex items-center gap-2 whitespace-nowrap"><span>{cl.pago}</span>{cl.tieneComprobante && <button onClick={() => abrirComprobante(cl.ultimoPedidoId)} disabled={abriendoComprobante === cl.ultimoPedidoId} className="f-body inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium disabled:opacity-60" style={{ background: c.accentSoft, color: c.accent }}>{abriendoComprobante === cl.ultimoPedidoId ? <Spinner size={11} /> : <Eye size={11} />} Ver comprobante</button>}</div></td>
                   </tr>
                 ))}
                 {lista.length === 0 && <tr><td colSpan={8} className="text-center py-8" style={{ color: c.textFaint }}>Sin clientes que coincidan con la búsqueda.</td></tr>}
@@ -1109,20 +1220,26 @@ function AdminClientes({ token }) {
   );
 }
 
-/* ---------------------------------- ADMIN: CATÁLOGO (2 catálogos separados) ---------------------------------- */
-function ListaProductos({ productos, onEditarPrecio, onToggleActivo, onEliminar }) {
+/* ---------------------------------- ADMIN: CATÁLOGO (3 catálogos separados) ---------------------------------- */
+function ListaProductos({ productos, onEditarPrecio, onToggleActivo, onEliminar, onSubirImagen, onEliminarImagen, subiendoImagen }) {
   const c = useTheme();
   return (
     <div className="space-y-2">
       {productos.map(p => (
         <div key={p.id} className="rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: p.activo ? 1 : 0.5 }}>
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}><Package size={16} color={c.accent} /></div>
+            <label className="group relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" style={{ background: c.accentSoft, border: `1px dashed ${c.accent}66` }} title="Elegir o reemplazar imagen">
+              {p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" /> : <Package size={18} color={c.accent} />}
+              <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(2,8,23,.58)" }}><ImagePlus size={18} color="#fff" /></span>
+              {subiendoImagen === p.id && <span className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(2,8,23,.58)" }}><Spinner size={16} /></span>}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={subiendoImagen === p.id} onChange={e => { const archivo = e.target.files?.[0]; if (archivo) onSubirImagen(p.id, archivo); e.target.value = ""; }} />
+            </label>
             <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-[11px]" style={{ color: c.textFaint }}>{p.descripcion || "—"}</p></div>
           </div>
           <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
             <div className="flex items-center gap-1"><span className="f-mono text-xs" style={{ color: c.textFaint }}>$</span><input type="number" defaultValue={p.precio} onBlur={e => onEditarPrecio(p.id, e.target.value)} className="f-mono text-xs w-20 px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
             <button onClick={() => onToggleActivo(p.id, p.activo)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap" style={{ background: p.activo ? c.successSoft : c.dangerSoft, color: p.activo ? c.success : c.danger }}>{p.activo ? "Activo" : "Oculto"}</button>
+            {p.imagenUrl && <button onClick={() => onEliminarImagen(p)} className="p-1.5 rounded-lg" style={{ background: c.surfaceAlt }} title={`Quitar foto de ${p.nombre}`} aria-label={`Quitar foto de ${p.nombre}`}><X size={13} color={c.textMuted} /></button>}
             <button onClick={() => onEliminar(p)} className="p-1.5 rounded-lg" style={{ background: c.dangerSoft }} title={`Eliminar definitivamente ${p.nombre}`} aria-label={`Eliminar definitivamente ${p.nombre}`}><Trash2 size={13} color={c.danger} /></button>
           </div>
         </div>
@@ -1138,6 +1255,7 @@ function AdminCatalogo({ token }) {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [subiendoImagen, setSubiendoImagen] = useState(null);
   const [tab, setTab] = useState("consumo_personal");
   const [nuevo, setNuevo] = useState({ nombre: "", precio: "", descripcion: "" });
 
@@ -1170,6 +1288,26 @@ function AdminCatalogo({ token }) {
       setError(e.message || "No se pudo eliminar el producto.");
     }
   };
+  const subirImagen = async (id, archivo) => {
+    setSubiendoImagen(id); setError(""); setMensaje("");
+    try {
+      const body = new FormData();
+      body.append("imagen", archivo);
+      const actualizado = await api(`/admin/productos/${id}/imagen`, { method: "PUT", token, body });
+      setProductos(prev => prev.map(p => p.id === id ? actualizado : p));
+      setMensaje("Imagen del producto actualizada.");
+    } catch (e) { setError(e.message || "No se pudo subir la imagen."); }
+    setSubiendoImagen(null);
+  };
+  const eliminarImagen = async (producto) => {
+    const confirmado = await confirmarAccion({ titulo: `¿Quitar la foto de "${producto.nombre}"?`, mensaje: "El producto seguirá activo y volverá a mostrar el ícono predeterminado.", textoConfirmar: "Quitar foto", peligro: false });
+    if (!confirmado) return;
+    try {
+      await api(`/admin/productos/${producto.id}/imagen`, { method: "DELETE", token });
+      setProductos(prev => prev.map(p => p.id === producto.id ? { ...p, imagenUrl: null } : p));
+      setMensaje("Imagen eliminada.");
+    } catch (e) { setError(e.message || "No se pudo quitar la imagen."); }
+  };
   const agregar = async () => {
     if (!nuevo.nombre || !nuevo.precio) return;
     try { await api("/admin/productos", { method: "POST", token, body: { nombre: nuevo.nombre, descripcion: nuevo.descripcion, precio: Number(nuevo.precio), categoria: tab } }); setNuevo({ nombre: "", precio: "", descripcion: "" }); cargar(); }
@@ -1193,7 +1331,7 @@ function AdminCatalogo({ token }) {
       <ErrorBanner mensaje={error} />
       {mensaje && <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.successSoft }}><CheckCircle2 size={14} color={c.success} /><span className="f-body text-xs" style={{ color: c.success }}>{mensaje}</span></div>}
 
-      <ListaProductos productos={delTab} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} />
+      <ListaProductos productos={delTab} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} onSubirImagen={subirImagen} onEliminarImagen={eliminarImagen} subiendoImagen={subiendoImagen} />
 
       <div className="rounded-2xl p-3.5 flex flex-col gap-2" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
         <p className="f-body text-xs font-medium" style={{ color: c.textMuted }}>Agregar producto a {catalogoActivo?.label}</p>
@@ -1558,10 +1696,13 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
   const [claveArea, setClaveArea] = useState("");
   const [guardandoArea, setGuardandoArea] = useState(false);
   const [okArea, setOkArea] = useState(""); const [errorArea, setErrorArea] = useState("");
+  const [datosBanco, setDatosBanco] = useState({ titular: "", banco: "", alias: "", cbu: "", cuit: "" });
+  const [guardandoBanco, setGuardandoBanco] = useState(false);
+  const [okBanco, setOkBanco] = useState(""); const [errorBanco, setErrorBanco] = useState("");
 
   useEffect(() => {
     api("/admin/perfil", { token }).then(p => { setPerfil(p); setNombre(p.nombre); setUsuario(p.usuario); });
-    api("/admin/configuracion", { token }).then(d => setAreaPrivadaConfigurada(d.areaPrivadaConfigurada));
+    api("/admin/configuracion", { token }).then(d => { setAreaPrivadaConfigurada(d.areaPrivadaConfigurada); setDatosBanco(d.transferencia || { titular: "", banco: "", alias: "", cbu: "", cuit: "" }); });
   }, [token]);
 
   const guardarPerfil = async () => {
@@ -1585,6 +1726,15 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
     setGuardandoArea(false);
   };
 
+  const guardarBanco = async () => {
+    setGuardandoBanco(true); setOkBanco(""); setErrorBanco("");
+    try {
+      const d = await api("/admin/configuracion", { method: "PATCH", token, body: { transferencia: datosBanco } });
+      setDatosBanco(d.transferencia); setOkBanco("Datos de transferencia guardados.");
+    } catch (e) { setErrorBanco(e.message || "No se pudieron guardar los datos bancarios."); }
+    setGuardandoBanco(false);
+  };
+
   if (!perfil) return <Cargando />;
 
   return (
@@ -1603,6 +1753,21 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
           {okPerfil && <p className="f-body text-[11px]" style={{ color: c.success }}>{okPerfil}</p>}
           <button onClick={guardarPerfil} disabled={guardandoPerfil} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{guardandoPerfil && <Spinner size={13} />} Guardar cambios</button>
         </div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-body text-sm font-medium mb-1 flex items-center gap-1.5" style={{ color: c.text }}><Landmark size={15} /> Datos para transferencias</p>
+        <p className="f-body text-[11px] mb-3" style={{ color: c.textFaint }}>Estos datos se muestran al cliente cuando elige Transferencia. Para habilitar esa opción, completá al menos el alias o el CBU/CVU.</p>
+        <div className="grid sm:grid-cols-2 gap-2.5 max-w-2xl">
+          <Input placeholder="Titular de la cuenta" value={datosBanco.titular} onChange={e => setDatosBanco({ ...datosBanco, titular: e.target.value })} />
+          <Input placeholder="Banco o billetera" value={datosBanco.banco} onChange={e => setDatosBanco({ ...datosBanco, banco: e.target.value })} />
+          <Input placeholder="Alias" value={datosBanco.alias} onChange={e => setDatosBanco({ ...datosBanco, alias: e.target.value })} />
+          <Input placeholder="CBU / CVU" value={datosBanco.cbu} onChange={e => setDatosBanco({ ...datosBanco, cbu: e.target.value })} />
+          <Input placeholder="CUIT (opcional)" value={datosBanco.cuit} onChange={e => setDatosBanco({ ...datosBanco, cuit: e.target.value })} />
+        </div>
+        <ErrorBanner mensaje={errorBanco} />
+        {okBanco && <p className="f-body text-[11px] mt-2" style={{ color: c.success }}>{okBanco}</p>}
+        <button onClick={guardarBanco} disabled={guardandoBanco} className="f-body mt-3 px-4 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{guardandoBanco && <Spinner size={13} />} Guardar datos bancarios</button>
       </div>
 
       <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
