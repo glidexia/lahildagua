@@ -685,6 +685,13 @@ function ClientePortal({ onAccesoInterno }) {
                 {form.pago === "Transferencia" && (
                   <div className="rounded-2xl p-4 space-y-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}44` }}>
                     <div className="flex items-center gap-2"><Landmark size={17} color={c.accent} /><p className="f-body text-sm font-medium" style={{ color: c.text }}>Datos para transferir</p></div>
+                    <div className="flex items-center justify-between gap-4 rounded-xl px-3.5 py-3" style={{ background: c.surface, border: `1px solid ${c.accent}66` }}>
+                      <div>
+                        <p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Total exacto a transferir</p>
+                        <p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>Transferí este importe antes de subir el comprobante.</p>
+                      </div>
+                      <span className="f-display text-xl font-semibold whitespace-nowrap" style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span>
+                    </div>
                     {datosTransferencia.configurados ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         {datosTransferencia.titular && <div><span className="block" style={{ color: c.textFaint }}>Titular</span><span className="f-body" style={{ color: c.text }}>{datosTransferencia.titular}</span></div>}
