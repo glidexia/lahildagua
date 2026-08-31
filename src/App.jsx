@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { io } from "socket.io-client";
 import {
   Droplet, Droplets, Package, Truck, User, MapPin, Building2, Store,
   CheckCircle2, XCircle, Clock, LayoutDashboard, Users, ChevronRight, ChevronLeft,
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
   Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
-  ImagePlus, Upload, Eye, Landmark, X, FileCheck2
+  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -544,7 +545,7 @@ function ClientePortal({ onAccesoInterno }) {
       const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q }));
       const pedido = { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, notas: form.notas, fechaEntrega: form.fechaEntrega, horarioZonaId: Number(form.horarioZonaId), items };
       let body = pedido;
-      if (form.pago === "Transferencia") {
+      if (form.pago === "Transferencia" && comprobante) {
         const multipart = new FormData();
         multipart.append("pedido", JSON.stringify(pedido));
         multipart.append("comprobante", comprobante);
@@ -681,14 +682,14 @@ function ClientePortal({ onAccesoInterno }) {
                     <span className="text-[11px]" style={{ color: c.textFaint }}>Elegido al inicio</span>
                   </div>
                 </div>
-                <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => { setForm({ ...form, pago: p }); if (p !== "Transferencia") setComprobante(null); }} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{form.pago === "Transferencia" ? "Transferí el total y adjuntá la captura para que podamos verificarla." : "El pago en efectivo se coordina con el chofer."}</p></div>
+                <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => { setForm({ ...form, pago: p }); if (p !== "Transferencia") setComprobante(null); }} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{form.pago === "Transferencia" ? "Podés transferir ahora o después de recibir el pedido. El comprobante es opcional." : "El pago en efectivo se coordina con el chofer."}</p></div>
                 {form.pago === "Transferencia" && (
                   <div className="rounded-2xl p-4 space-y-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}44` }}>
                     <div className="flex items-center gap-2"><Landmark size={17} color={c.accent} /><p className="f-body text-sm font-medium" style={{ color: c.text }}>Datos para transferir</p></div>
                     <div className="flex items-center justify-between gap-4 rounded-xl px-3.5 py-3" style={{ background: c.surface, border: `1px solid ${c.accent}66` }}>
                       <div>
                         <p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Total exacto a transferir</p>
-                        <p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>Transferí este importe antes de subir el comprobante.</p>
+                        <p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>Si pagás ahora, transferí este importe. También podés hacerlo después.</p>
                       </div>
                       <span className="f-display text-xl font-semibold whitespace-nowrap" style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span>
                     </div>
@@ -700,10 +701,10 @@ function ClientePortal({ onAccesoInterno }) {
                         {datosTransferencia.cbu && <div><span className="block" style={{ color: c.textFaint }}>CBU/CVU</span><span className="f-mono break-all" style={{ color: c.text }}>{datosTransferencia.cbu}</span></div>}
                         {datosTransferencia.cuit && <div><span className="block" style={{ color: c.textFaint }}>CUIT</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.cuit}</span></div>}
                       </div>
-                    ) : <p className="f-body text-xs" style={{ color: c.amber }}>Los datos todavía no están publicados. Escribinos por WhatsApp antes de confirmar.</p>}
+                    ) : <p className="f-body text-xs" style={{ color: c.amber }}>Los datos todavía no están publicados. Podés confirmar el pedido y coordinar la transferencia después.</p>}
                     <label className="f-body flex items-center justify-center gap-2 w-full px-3 py-3 rounded-xl text-xs font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobante ? c.success : c.accent}`, color: comprobante ? c.success : c.accent }}>
                       {comprobante ? <FileCheck2 size={16} /> : <Upload size={16} />}
-                      <span className="truncate">{comprobante ? comprobante.name : "Subir captura del pago"}</span>
+                      <span className="truncate">{comprobante ? comprobante.name : "Subir captura del pago (opcional)"}</span>
                       <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={e => setComprobante(e.target.files?.[0] || null)} />
                     </label>
                     <p className="f-body text-[10px]" style={{ color: c.textFaint }}>JPG, PNG o WebP · máximo 5 MB.</p>
@@ -714,7 +715,7 @@ function ClientePortal({ onAccesoInterno }) {
                   <textarea value={form.notas} maxLength={500} onChange={e => setForm({ ...form, notas: e.target.value })} rows={3} placeholder="Ej.: tocar timbre 2, portón negro, llamar antes de llegar..." className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
                   <p className="f-body text-[10px] text-right mt-0.5" style={{ color: c.textFaint }}>{form.notas.length}/500</p>
                 </div>
-                <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId || (form.pago === "Transferencia" && (!datosTransferencia.configurados || !comprobante))} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
+                <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
               </div>
             )}
 
@@ -729,7 +730,7 @@ function ClientePortal({ onAccesoInterno }) {
                   {Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; return <div key={id} className="flex justify-between f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}</span><span className="f-mono" style={{ color: c.textMuted }}>${(Number(p.precio) * q).toLocaleString("es-AR")}</span></div>; })}
                   <div className="h-px my-1" style={{ background: c.border }} />
                   <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span></div>
-                  <div className="flex justify-between f-body text-xs pt-1"><span style={{ color: c.textMuted }}>Pago</span><span style={{ color: c.text }}>{form.pago}{form.pago === "Transferencia" ? " · comprobante adjunto" : ""}</span></div>
+                  <div className="flex justify-between f-body text-xs pt-1"><span style={{ color: c.textMuted }}>Pago</span><span style={{ color: c.text }}>{form.pago}{form.pago === "Transferencia" ? (comprobante ? " · comprobante adjunto" : " · comprobante pendiente") : ""}</span></div>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><Clock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>El chofer organiza su recorrido dentro de la franja elegida; te avisaremos antes de llegar.</span></div>
                 <div className="flex gap-2"><button onClick={() => setStep(2)} className="f-body py-3 px-4 rounded-xl text-sm" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ChevronLeft size={15} /></button><button disabled={enviando} onClick={confirmar} className="f-body flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{enviando && <Spinner size={14} />} Confirmar pedido</button></div>
@@ -841,6 +842,7 @@ function ChoferPanel({ session, onLogout }) {
   const [pedidos, setPedidos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [actualizando, setActualizando] = useState(false);
   const [confirmandoPago, setConfirmandoPago] = useState(null); // id del pedido al que le estoy pidiendo el método de pago
   const camionColor = colorDeCamion(session.camionId);
   const diaEditable = dia !== "manana";
@@ -854,6 +856,27 @@ function ChoferPanel({ session, onLogout }) {
 
   useEffect(() => { cargar(true); }, [cargar]);
   useEffect(() => { const t = setInterval(() => cargar(false), 8000); return () => clearInterval(t); }, [cargar]);
+  useEffect(() => {
+    const socket = io(API_BASE, { auth: { token: session.token }, transports: ["websocket", "polling"] });
+    const recargarRuta = () => cargar(false);
+    socket.on("pedido:nuevo", recargarRuta);
+    socket.on("pedido:actualizado", recargarRuta);
+    socket.on("pedido:removido", recargarRuta);
+    return () => socket.disconnect();
+  }, [cargar, session.token]);
+  useEffect(() => {
+    const recargarAlVolver = () => {
+      if (document.visibilityState === "visible") cargar(false);
+    };
+    window.addEventListener("focus", recargarAlVolver);
+    window.addEventListener("online", recargarAlVolver);
+    document.addEventListener("visibilitychange", recargarAlVolver);
+    return () => {
+      window.removeEventListener("focus", recargarAlVolver);
+      window.removeEventListener("online", recargarAlVolver);
+      document.removeEventListener("visibilitychange", recargarAlVolver);
+    };
+  }, [cargar]);
   useEffect(() => {
     const actualizarFechas = () => setDias(crearDias());
     const t = setInterval(actualizarFechas, 60000);
@@ -870,12 +893,21 @@ function ChoferPanel({ session, onLogout }) {
     catch (e) { setError(e.message || "No pudimos actualizar el pedido."); cargar(false); } // si falla, recargo de verdad
   };
 
+  const actualizarRuta = async () => {
+    setActualizando(true);
+    await cargar(false);
+    setActualizando(false);
+  };
+
   return (
     <div className="flex-1" style={{ background: c.bg }}>
       <div className="max-w-md mx-auto px-4 py-6">
         <div className="flex items-center justify-between mb-5">
           <BrandLogo variant="word" className="h-8 w-auto max-w-[150px]" />
-          <button onClick={onLogout} className="f-body flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs" style={{ background: c.surface, color: c.textMuted }}><LogOut size={14} /> Salir</button>
+          <div className="flex items-center gap-2">
+            <button onClick={actualizarRuta} disabled={actualizando} aria-label="Actualizar ruta" title="Actualizar ruta" className="f-body flex items-center justify-center w-9 h-9 rounded-lg disabled:opacity-60" style={{ background: c.surface, color: c.accent }}><RefreshCw size={14} className={actualizando ? "animate-spin" : ""} /></button>
+            <button onClick={onLogout} className="f-body flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs" style={{ background: c.surface, color: c.textMuted }}><LogOut size={14} /> Salir</button>
+          </div>
         </div>
         <div className="flex items-center gap-2.5 mb-5">
           <div className="flex items-center gap-2.5">
