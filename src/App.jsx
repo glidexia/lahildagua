@@ -16,7 +16,37 @@ const ERROR_GLOBAL_EVENT = "lahilda:error";
 const CONFIRM_GLOBAL_EVENT = "lahilda:confirmar";
 const AUTH_EXPIRED_EVENT = "lahilda:sesion-vencida";
 const AUTH_SESSION_KEY = "lahilda:sesion";
+const CLIENTE_DATA_KEY = "lahilda:datos-cliente";
 let ultimoErrorGlobal = { mensaje: "", momento: 0 };
+
+const FORM_CLIENTE_VACIO = { nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" };
+function leerDatosClienteGuardados() {
+  if (typeof window === "undefined") return {};
+  try {
+    const datos = JSON.parse(window.localStorage.getItem(CLIENTE_DATA_KEY) || "{}");
+    return {
+      nombre: typeof datos.nombre === "string" ? datos.nombre : "",
+      telefono: typeof datos.telefono === "string" ? datos.telefono : "",
+      barrio: typeof datos.barrio === "string" ? datos.barrio : "",
+      calle: typeof datos.calle === "string" ? datos.calle : "",
+      pago: PAGOS?.includes(datos.pago) ? datos.pago : "Efectivo",
+    };
+  } catch { return {}; }
+}
+function formularioInicialCliente() {
+  return { ...FORM_CLIENTE_VACIO, ...leerDatosClienteGuardados() };
+}
+function guardarDatosCliente(form) {
+  try {
+    window.localStorage.setItem(CLIENTE_DATA_KEY, JSON.stringify({
+      nombre: form.nombre.trim(),
+      telefono: form.telefono.trim(),
+      barrio: form.barrio,
+      calle: form.calle.trim(),
+      pago: form.pago,
+    }));
+  } catch {}
+}
 
 function mostrarErrorGlobal(mensaje) {
   if (!mensaje || typeof window === "undefined") return;
@@ -504,7 +534,7 @@ function ClientePortal({ onAccesoInterno }) {
   const [step, setStep] = useState(0); // 0: segmento, 1: productos, 2: datos, 3: revisión
   const [segmento, setSegmento] = useState(null); // { id, categoria, label }
   const [cant, setCant] = useState({});
-  const [form, setForm] = useState({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" });
+  const [form, setForm] = useState(formularioInicialCliente);
   const [datosTransferencia, setDatosTransferencia] = useState({ titular: "", banco: "", alias: "", cbu: "", cuit: "", configurados: false });
   const [comprobante, setComprobante] = useState(null);
   const [confirmado, setConfirmado] = useState(null);
@@ -517,7 +547,9 @@ function ClientePortal({ onAccesoInterno }) {
       try {
         const [prods, zs, datosPago] = await Promise.all([api("/public/productos"), api("/public/zonas"), api("/public/configuracion-pago")]);
         setProductos(prods);
-        setZonas(zs.map(z => ({ barrio: z.barrio, camionId: z.camionId, nombre: z.camionNombre, color: colorDeCamion(z.camionId), diasEntrega: z.diasEntrega || [] })));
+        const zonasNormalizadas = zs.map(z => ({ barrio: z.barrio, camionId: z.camionId, nombre: z.camionNombre, color: colorDeCamion(z.camionId), diasEntrega: z.diasEntrega || [] }));
+        setZonas(zonasNormalizadas);
+        setForm(actual => actual.barrio && !zonasNormalizadas.some(z => z.barrio === actual.barrio) ? { ...actual, barrio: "", fechaEntrega: "", horarioZonaId: "" } : actual);
         setDatosTransferencia(datosPago);
       } catch (e) { setError("No pudimos cargar el catálogo. Refrescá la página."); }
       setCargando(false);
@@ -566,6 +598,7 @@ function ClientePortal({ onAccesoInterno }) {
         body = multipart;
       }
       const resp = await api("/public/pedidos", { method: "POST", body });
+      guardarDatosCliente(form);
       setConfirmado(resp);
     } catch (e) {
       setError(e.message || "No pudimos registrar el pedido.");
@@ -605,7 +638,7 @@ function ClientePortal({ onAccesoInterno }) {
               <div className="h-px" style={{ background: c.border }} />
               <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
             </div>
-            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setDisponibilidad([]); setComprobante(null); setForm({ nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" }); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
+            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setDisponibilidad([]); setComprobante(null); setForm(formularioInicialCliente()); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
           </div>
         ) : (
           <div className="max-w-md mx-auto px-4 py-6">
@@ -650,10 +683,10 @@ function ClientePortal({ onAccesoInterno }) {
 
             {step === 2 && (
               <div className="space-y-3">
-                <Input placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
-                <Input placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
-                <Input placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} />
-                <select value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}>
+                <Input name="name" autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
+                <Input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
+                <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} />
+                <select name="address-level3" autoComplete="address-level3" value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}>
                   <option value="">Barrio (define tu zona de reparto)</option>
                   {zonas.map(z => <option key={z.barrio} value={z.barrio}>{z.barrio}</option>)}
                 </select>
