@@ -1755,9 +1755,9 @@ function ZonasOperativas({ zonas, onAgregar, onRenombrar, onEliminar }) {
   );
 }
 
-function AgendaCamiones({ token, camiones, onGuardado }) {
+function AgendaBarrios({ token, zonas, onGuardado }) {
   const c = useTheme();
-  const [camionId, setCamionId] = useState("");
+  const [zonaId, setZonaId] = useState("");
   const [agenda, setAgenda] = useState({ diasSemana: [], horaDesde: "09:00", horaHasta: "15:00", cupoMaximo: "6" });
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -1765,15 +1765,15 @@ function AgendaCamiones({ token, camiones, onGuardado }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!camiones.length) return setCamionId("");
-    if (!camiones.some(cm => String(cm.id) === String(camionId))) setCamionId(String(camiones[0].id));
-  }, [camiones, camionId]);
+    if (!zonas.length) return setZonaId("");
+    if (!zonas.some(zona => String(zona.id) === String(zonaId))) setZonaId(String(zonas[0].id));
+  }, [zonas, zonaId]);
 
   useEffect(() => {
-    if (!camionId) return;
+    if (!zonaId) return;
     let vigente = true;
     setCargando(true); setOk(""); setError("");
-    api(`/admin/camiones/${camionId}/agenda`, { token })
+    api(`/admin/zonas/${zonaId}/agenda`, { token })
       .then(data => {
         if (!vigente) return;
         setAgenda({
@@ -1786,9 +1786,9 @@ function AgendaCamiones({ token, camiones, onGuardado }) {
       .catch(e => vigente && setError(e.message || "No pudimos cargar la agenda."))
       .finally(() => vigente && setCargando(false));
     return () => { vigente = false; };
-  }, [camionId, token]);
+  }, [zonaId, token]);
 
-  const camion = camiones.find(cm => String(cm.id) === String(camionId));
+  const zona = zonas.find(item => String(item.id) === String(zonaId));
   const franjas = useMemo(() => generarFranjasVista(agenda.horaDesde, agenda.horaHasta), [agenda.horaDesde, agenda.horaHasta]);
   const alternarDia = (dia) => setAgenda(actual => ({
     ...actual,
@@ -1800,12 +1800,12 @@ function AgendaCamiones({ token, camiones, onGuardado }) {
     if (!franjas.length) return setError("La franja debe poder dividirse exactamente en turnos de 60 minutos.");
     setGuardando(true);
     try {
-      const data = await api(`/admin/camiones/${camionId}/agenda`, {
+      const data = await api(`/admin/zonas/${zonaId}/agenda`, {
         method: "PUT", token,
         body: { ...agenda, cupoMaximo: Number(agenda.cupoMaximo) },
       });
       setAgenda({ diasSemana: data.diasSemana, horaDesde: data.horaDesde, horaHasta: data.horaHasta, cupoMaximo: String(data.cupoMaximo) });
-      setOk(`Agenda guardada: ${data.diasSemana.length * franjas.length} turnos aplicados en ${data.barrios.length} barrio${data.barrios.length === 1 ? "" : "s"}.`);
+      setOk(`Horario de ${data.barrio} guardado: ${data.diasSemana.length * franjas.length} turnos disponibles.`);
       onGuardado?.();
     } catch (e) { setError(e.message || "No pudimos guardar la agenda."); }
     setGuardando(false);
@@ -1815,12 +1815,12 @@ function AgendaCamiones({ token, camiones, onGuardado }) {
     <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
       <div className="flex items-start gap-2 mb-3">
         <CalendarClock size={16} color={c.accent} className="mt-0.5 shrink-0" />
-        <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Agenda de reparto por camión</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Elegí los días y el horario general. El sistema lo divide en turnos consecutivos de 60 minutos para todos los barrios de ese camión.</p></div>
+        <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Horarios de entrega por barrio</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Elegí un barrio y definí sus días y horario. Solamente los clientes de ese barrio verán estos turnos.</p></div>
       </div>
-      {camiones.length === 0 ? <p className="f-body text-xs" style={{ color: c.textFaint }}>Primero agregá un camión.</p> : (
+      {zonas.length === 0 ? <p className="f-body text-xs" style={{ color: c.textFaint }}>Primero agregá un barrio.</p> : (
         <div className="space-y-3">
-          <select value={camionId} onChange={e => setCamionId(e.target.value)} className="f-body w-full px-3 py-2.5 rounded-xl text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }}>
-            {camiones.map(cm => <option key={cm.id} value={cm.id}>{cm.nombre} · {cm.barrios.length} barrio{cm.barrios.length === 1 ? "" : "s"}</option>)}
+          <select value={zonaId} onChange={e => setZonaId(e.target.value)} className="f-body w-full px-3 py-2.5 rounded-xl text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }}>
+            {zonas.map(item => <option key={item.id} value={item.id}>{item.barrio} · {item.camionNombre || "sin camión asignado"}</option>)}
           </select>
           {cargando ? <Cargando label="Cargando agenda..." /> : (
             <>
@@ -1850,13 +1850,13 @@ function AgendaCamiones({ token, camiones, onGuardado }) {
                   {franjas.map(franja => <span key={franja.horaDesde} className="f-mono text-[10px] rounded-lg px-2 py-1" style={{ background: c.surface, color: c.accent, border: `1px solid ${c.border}` }}>{franja.horaDesde}–{franja.horaHasta}</span>)}
                   {!franjas.length && <span className="f-body text-[11px]" style={{ color: c.amber }}>Revisá las horas: la duración total debe ser múltiplo de 60 minutos.</span>}
                 </div>
-                <p className="f-body text-[10px] mt-2" style={{ color: c.textFaint }}>{camion?.barrios.length ? `Se aplicará a: ${camion.barrios.join(", ")}.` : "Este camión todavía no tiene barrios. Asignale al menos uno para guardar la agenda."}</p>
+                <p className="f-body text-[10px] mt-2" style={{ color: c.textFaint }}>{zona ? `Se aplicará solamente a ${zona.barrio}. ${zona.camionNombre ? `El reparto está asignado a ${zona.camionNombre}.` : "Todavía falta asignarle un camión."}` : "Elegí un barrio para configurar sus entregas."}</p>
               </div>
               <ErrorBanner mensaje={error} />
               {error && <p className="f-body text-xs" style={{ color: c.danger }}>{error}</p>}
               {ok && <p className="f-body text-xs" style={{ color: c.success }}>{ok}</p>}
-              <button disabled={guardando || !camion?.barrios.length || !agenda.diasSemana.length || !franjas.length} onClick={guardar} className="f-body w-full px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={13} /> : <Save size={13} />} Guardar agenda y generar turnos</button>
-              <p className="f-body text-[10px]" style={{ color: c.textFaint }}>Los clientes elegirán uno de estos turnos. En el celular del chofer, los pedidos aparecerán ordenados primero por horario y después por el recorrido de las zonas.</p>
+              <button disabled={guardando || !zona || !agenda.diasSemana.length || !franjas.length} onClick={guardar} className="f-body w-full px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={13} /> : <Save size={13} />} Guardar horario de {zona?.barrio || "este barrio"}</button>
+              <p className="f-body text-[10px]" style={{ color: c.textFaint }}>Cuando el cliente elija este barrio, verá únicamente sus fechas y turnos disponibles. El chofer seguirá recibiendo los pedidos ordenados por horario y recorrido.</p>
             </>
           )}
         </div>
@@ -1918,7 +1918,7 @@ function AdminCamiones({ token }) {
       <ErrorBanner mensaje={error} />
 
       <ZonasOperativas zonas={zonas} onAgregar={agregarZona} onRenombrar={renombrarZona} onEliminar={eliminarZona} />
-      <AgendaCamiones token={token} camiones={camiones} onGuardado={() => cargar(false)} />
+      <AgendaBarrios token={token} zonas={zonas} onGuardado={() => cargar(false)} />
 
       <div className="grid sm:grid-cols-2 gap-3">
         {camiones.map(cm => <CamionCard key={cm.id} cm={cm} zonas={zonas} onGuardar={guardarCamion} onEliminar={eliminarCamion} onAsignarZona={asignarZona} onQuitarZona={quitarZona} />)}
