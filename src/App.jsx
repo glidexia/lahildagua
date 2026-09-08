@@ -1002,7 +1002,8 @@ function ChoferPanel({ session, onLogout }) {
                   {o.estado === "entregado" && o.pagoConfirmado && (
                     <p className="f-body text-[11px] mb-2 flex items-center gap-1" style={{ color: c.success }}><DollarSign size={11} /> Cobrado con: {o.pagoConfirmado}</p>
                   )}
-                  {o.notas && <p className="f-body text-[11px] mb-3 px-2.5 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.text }}><b>Nota:</b> {o.notas}</p>}
+                  {o.notas && <p className="f-body text-[11px] mb-2 px-2.5 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.text }}><b>Nota del cliente:</b> {o.notas}</p>}
+                  {o.notaAdmin && <p className="f-body text-[11px] mb-3 px-2.5 py-2 rounded-lg" style={{ background: c.accentSoft, color: c.text }}><b>Indicación de administración:</b> {o.notaAdmin}</p>}
 
                   {diaEditable && o.estado === "pendiente" && confirmandoPago !== o.id && (
                     <div className="flex gap-2">
@@ -1122,6 +1123,13 @@ function AdminPedidos({ token, camiones }) {
   const [error, setError] = useState("");
   const [comprobanteUrl, setComprobanteUrl] = useState("");
   const [abriendoComprobante, setAbriendoComprobante] = useState(null);
+  const [detalleId, setDetalleId] = useState(null);
+  const [detalle, setDetalle] = useState(null);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [fechaManual, setFechaManual] = useState("");
+  const [notaAdmin, setNotaAdmin] = useState("");
+  const [guardandoDetalle, setGuardandoDetalle] = useState(false);
+  const [okDetalle, setOkDetalle] = useState("");
 
   const cerrarComprobante = useCallback(() => {
     setComprobanteUrl(actual => { if (actual) URL.revokeObjectURL(actual); return ""; });
@@ -1159,6 +1167,54 @@ function AdminPedidos({ token, camiones }) {
   useEffect(() => { cargar(true); }, [cargar]);
   useEffect(() => { const t = setInterval(() => cargar(false), 10000); return () => clearInterval(t); }, [cargar]);
 
+  const cerrarDetalle = useCallback(() => {
+    setDetalleId(null);
+    setDetalle(null);
+    setOkDetalle("");
+  }, []);
+
+  useEffect(() => {
+    if (!detalleId) return;
+    const cerrarConEscape = (evento) => { if (evento.key === "Escape") cerrarDetalle(); };
+    window.addEventListener("keydown", cerrarConEscape);
+    return () => window.removeEventListener("keydown", cerrarConEscape);
+  }, [detalleId, cerrarDetalle]);
+
+  const abrirDetalle = async (id) => {
+    setDetalleId(id);
+    setDetalle(null);
+    setOkDetalle("");
+    setCargandoDetalle(true);
+    try {
+      const data = await api(`/admin/pedidos/${id}`, { token });
+      setDetalle(data);
+      setFechaManual(String(data.fechaEntrega || "").slice(0, 10));
+      setNotaAdmin(data.notaAdmin || "");
+    } catch (e) {
+      cerrarDetalle();
+    } finally { setCargandoDetalle(false); }
+  };
+
+  const guardarCambioFecha = async () => {
+    if (!detalle || !fechaManual) {
+      mostrarErrorGlobal("Elegí la nueva fecha de entrega.");
+      return;
+    }
+    setGuardandoDetalle(true);
+    setOkDetalle("");
+    try {
+      const actualizado = await api(`/admin/pedidos/${detalle.id}/fecha`, {
+        method: "PATCH",
+        token,
+        body: { fechaEntrega: fechaManual, notaAdmin },
+      });
+      setDetalle(actual => ({ ...actual, ...actualizado }));
+      setNotaAdmin(actualizado.notaAdmin || "");
+      setOkDetalle("Pedido movido al día indicado. El chofer ya recibió la actualización.");
+      await cargar(false);
+    } finally { setGuardandoDetalle(false); }
+  };
+
   const reasignar = async (id, newCamionId) => {
     try { await api(`/admin/pedidos/${id}/camion`, { method: "PATCH", token, body: { camionId: Number(newCamionId) } }); cargar(false); }
     catch (e) { setError("No se pudo reasignar el pedido."); }
@@ -1167,9 +1223,72 @@ function AdminPedidos({ token, camiones }) {
   return (
     <div className="space-y-4">
       <ComprobanteModal url={comprobanteUrl} onClose={cerrarComprobante} />
+      {detalleId && (
+        <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) cerrarDetalle(); }} className="modal-backdrop-in fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ zIndex: 1001, background: "rgba(2, 8, 23, 0.76)", backdropFilter: "blur(6px)" }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="detalle-pedido-titulo" className="modal-card-in w-full max-w-4xl max-h-[92vh] overflow-y-auto rounded-3xl shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 px-5 md:px-7 py-5" style={{ background: c.surface, borderBottom: `1px solid ${c.borderSoft}` }}>
+              <div>
+                <p className="f-body text-[11px] uppercase tracking-wider" style={{ color: c.accent }}>Ficha completa</p>
+                <h2 id="detalle-pedido-titulo" className="f-display text-xl md:text-2xl font-semibold mt-1" style={{ color: c.text }}>{detalle ? `Pedido #${detalle.id} · ${detalle.cliente}` : "Cargando pedido..."}</h2>
+              </div>
+              <button onClick={cerrarDetalle} className="p-2.5 rounded-xl shrink-0" style={{ background: c.surfaceAlt }} aria-label="Cerrar detalle"><X size={18} color={c.textMuted} /></button>
+            </div>
+
+            {cargandoDetalle || !detalle ? <Cargando label="Cargando todos los datos..." /> : (
+              <div className="p-5 md:p-7 space-y-6">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Cliente</p><p className="f-body text-sm font-semibold" style={{ color: c.text }}>{detalle.cliente}</p><p className="f-mono text-xs mt-1" style={{ color: c.textMuted }}>{detalle.telefono}</p></div>
+                  <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Entrega</p><p className="f-body text-sm font-semibold" style={{ color: c.text }}>{detalle.direccion}</p><p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>{detalle.barrio}</p></div>
+                  <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Camión y estado</p><div className="flex flex-wrap items-center gap-2"><CamionChip camion={detalle.camion} small /><EstadoBadge estado={detalle.estado} /></div></div>
+                  <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Pago y total</p><p className="f-body text-sm" style={{ color: detalle.pagoConfirmado ? c.success : c.text }}>{detalle.pagoConfirmado ? `${detalle.pagoConfirmado} confirmado` : detalle.pago}</p><p className="f-mono text-base font-semibold mt-1" style={{ color: c.accent }}>${Number(detalle.total || 0).toLocaleString("es-AR")}</p></div>
+                </div>
+
+                <div className="grid md:grid-cols-[1.1fr_.9fr] gap-4">
+                  <div className="rounded-2xl p-4 md:p-5" style={{ border: `1px solid ${c.border}` }}>
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <h3 className="f-display text-base font-semibold" style={{ color: c.text }}>Productos</h3>
+                      <span className="f-body text-xs" style={{ color: c.textFaint }}>{detalle.items.length} producto{detalle.items.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {detalle.items.map(item => (
+                        <div key={item.id} className="grid grid-cols-[1fr_auto] gap-3 py-2" style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
+                          <div><p className="f-body text-sm" style={{ color: c.text }}>{item.cantidad}× {item.nombre}</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>${Number(item.precioUnitario).toLocaleString("es-AR")} c/u</p></div>
+                          <span className="f-mono text-sm" style={{ color: c.textMuted }}>${Number(item.subtotal).toLocaleString("es-AR")}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between pt-3"><span className="f-body text-sm font-semibold" style={{ color: c.text }}>Total</span><span className="f-mono text-base font-semibold" style={{ color: c.accent }}>${Number(detalle.total || 0).toLocaleString("es-AR")}</span></div>
+                  </div>
+
+                  <div className="rounded-2xl p-4 md:p-5 space-y-4" style={{ border: `1px solid ${c.border}` }}>
+                    <h3 className="f-display text-base font-semibold" style={{ color: c.text }}>Datos del pedido</h3>
+                    <div><p className="f-body text-[11px]" style={{ color: c.textFaint }}>Categoría</p><p className="f-body text-sm mt-1" style={{ color: c.text }}>{OPCIONES_SEGMENTO.find(x => x.categoria === detalle.segmento)?.label || detalle.segmento}</p></div>
+                    <div><p className="f-body text-[11px]" style={{ color: c.textFaint }}>Horario aproximado</p><p className="f-body text-sm mt-1" style={{ color: c.text }}>{formatearFranja(detalle.horaDesde, detalle.horaHasta)}</p></div>
+                    <div><p className="f-body text-[11px]" style={{ color: c.textFaint }}>Nota del cliente</p><p className="f-body text-sm mt-1 whitespace-pre-wrap" style={{ color: c.text }}>{detalle.notas || "Sin notas"}</p></div>
+                    {detalle.tieneComprobante && <button onClick={() => abrirComprobante(detalle.id)} disabled={abriendoComprobante === detalle.id} className="f-body w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium disabled:opacity-60" style={{ background: c.accentSoft, color: c.accent }}>{abriendoComprobante === detalle.id ? <Spinner size={13} /> : <Eye size={14} />} Ver comprobante</button>}
+                  </div>
+                </div>
+
+                {detalle.estado === "pendiente" ? <div className="rounded-2xl p-4 md:p-5" style={{ background: c.accentSoft, border: `1px solid ${c.border}` }}>
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
+                    <div><h3 className="f-display text-base font-semibold flex items-center gap-2" style={{ color: c.text }}><CalendarClock size={17} color={c.accent} /> Cambiar entrega manualmente</h3><p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>Al guardar, el pedido se mueve al día nuevo en administración y en la ruta del chofer.</p></div>
+                    <div className="md:text-right"><p className="f-body text-[11px]" style={{ color: c.textFaint }}>Entrega actual</p><p className="f-body text-sm font-semibold mt-1" style={{ color: c.accent }}>{formatearFechaEntrega(detalle.fechaEntrega)}</p>{detalle.fechaEntregaOriginal && <p className="f-body text-[11px] mt-1" style={{ color: c.textMuted }}>Solicitada originalmente: {formatearFechaEntrega(detalle.fechaEntregaOriginal)}</p>}</div>
+                  </div>
+                  <div className="grid md:grid-cols-[240px_1fr] gap-3">
+                    <div><label className="f-body block text-xs mb-1.5" style={{ color: c.textMuted }}>Nueva fecha</label><Input type="date" value={fechaManual} onChange={e => { setFechaManual(e.target.value); setOkDetalle(""); }} /></div>
+                    <div><label className="f-body block text-xs mb-1.5" style={{ color: c.textMuted }}>Nota interna para el chofer (opcional)</label><textarea value={notaAdmin} maxLength={500} onChange={e => { setNotaAdmin(e.target.value); setOkDetalle(""); }} rows={3} placeholder="Ej.: el cliente confirmó que puede recibir antes; llamar al llegar..." className="f-body w-full px-3.5 py-2.5 rounded-xl text-sm outline-none resize-y" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} /><p className="f-body text-[10px] text-right mt-1" style={{ color: c.textFaint }}>{notaAdmin.length}/500</p></div>
+                  </div>
+                  {okDetalle && <p className="f-body text-xs mt-3 flex items-center gap-1.5" style={{ color: c.success }}><CheckCircle2 size={13} /> {okDetalle}</p>}
+                  <button onClick={guardarCambioFecha} disabled={guardandoDetalle} className="f-body mt-4 px-5 py-2.5 rounded-xl text-sm font-semibold inline-flex items-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{guardandoDetalle ? <Spinner size={14} /> : <Save size={14} />} Guardar fecha y nota</button>
+                </div> : <div className="rounded-2xl p-4 flex items-center gap-2" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}` }}><CheckCircle2 size={16} color={detalle.estado === "entregado" ? c.success : c.textMuted} /><p className="f-body text-xs" style={{ color: c.textMuted }}>La fecha queda bloqueada porque este pedido ya fue cerrado.</p></div>}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}>
         <ArrowLeftRight size={14} color={c.accent} />
-        <p className="f-body text-xs" style={{ color: c.text }}>Los pedidos vienen agrupados por camión y ordenados como hoja de ruta desde el servidor. Reasignalos desde el selector de cada fila.</p>
+        <p className="f-body text-xs" style={{ color: c.text }}>Los pedidos se ordenan como hoja de ruta. Tocá cualquier tarjeta para ver todos sus datos, cambiar la fecha o dejarle una indicación al chofer.</p>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" color={c.textFaint} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar cliente..." className="f-body w-full pl-8 pr-3 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
@@ -1189,37 +1308,45 @@ function AdminPedidos({ token, camiones }) {
           <div className="space-y-3">
             {grupos.map(({ camion: cm, pedidos: items }) => (
               <div key={cm.id} className="rounded-2xl overflow-hidden" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                <div className="flex items-center gap-2 px-4 py-2.5" style={{ background: `${cm.color}14`, borderBottom: `1px solid ${c.borderSoft}` }}>
-                  <Truck size={13} color={cm.color} /><span className="f-body text-xs font-medium" style={{ color: cm.color }}>{cm.nombre}</span>
-                  <span className="f-mono text-[11px] ml-auto" style={{ color: c.textFaint }}>{items.length} pedido{items.length !== 1 ? "s" : ""}</span>
+                <div className="flex items-center gap-2 px-5 py-3.5" style={{ background: `${cm.color}14`, borderBottom: `1px solid ${c.borderSoft}` }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${cm.color}20` }}><Truck size={17} color={cm.color} /></div><span className="f-display text-sm font-semibold" style={{ color: cm.color }}>{cm.nombre}</span>
+                  <span className="f-mono text-xs ml-auto" style={{ color: c.textFaint }}>{items.length} pedido{items.length !== 1 ? "s" : ""}</span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full f-body text-xs">
-                    <thead><tr>{["Parada", "Cliente", "Barrio", "Día", "Horario", "Notas", "Pago", "Total", "Camión", "Estado"].map(h => <th key={h} className="text-left px-4 py-2 font-medium whitespace-nowrap" style={{ color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {items.map(o => (
-                        <tr key={o.id} style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-                          <td className="px-4 py-2.5"><span className="f-mono text-[11px] w-5 h-5 rounded-full inline-flex items-center justify-center" style={{ background: `${cm.color}22`, color: cm.color }}>{o.parada}</span></td>
-                          <td className="px-4 py-2.5" style={{ color: c.text }}>{o.cliente}</td>
-                          <td className="px-4 py-2.5" style={{ color: c.textMuted }}>{o.barrio}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{new Date(o.fechaEntrega).toLocaleDateString("es-AR", { timeZone: "UTC" })}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: o.horaDesde ? c.accent : c.textFaint }}>{formatearFranja(o.horaDesde, o.horaHasta)}</td>
-                          <td className="px-4 py-2.5 max-w-[220px]" style={{ color: c.textMuted }}><span className="line-clamp-2" title={o.notas || ""}>{o.notas || "—"}</span></td>
-                          <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}><div className="flex items-center gap-2"><span>{o.pagoConfirmado ? <span style={{ color: c.success }}>{o.pagoConfirmado} ✓</span> : (o.pago || "—")}</span>{o.tieneComprobante && <button onClick={() => abrirComprobante(o.id)} disabled={abriendoComprobante === o.id} className="f-body inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium disabled:opacity-60" style={{ background: c.accentSoft, color: c.accent }} title="Ver captura del pago">{abriendoComprobante === o.id ? <Spinner size={11} /> : <Eye size={11} />} Ver</button>}</div></td>
-                          <td className="f-mono px-4 py-2.5" style={{ color: c.accent }}>${Number(o.total || 0).toLocaleString("es-AR")}</td>
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-1.5">
-                              <select value={o.camionId} onChange={e => reasignar(o.id, e.target.value)} className="f-body text-[11px] rounded-md px-1.5 py-1 outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: camiones.find(x => x.id === o.camionId)?.color }}>
-                                {camiones.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
-                              </select>
-                              {o.reasignadoManual && <span className="f-body text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: c.amberSoft, color: c.amber }}>manual</span>}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5"><EstadoBadge estado={o.estado} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-4">
+                  {items.map(o => (
+                    <article key={o.id} role="button" tabIndex={0} onClick={() => abrirDetalle(o.id)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirDetalle(o.id); } }} className="rounded-2xl p-5 cursor-pointer transition-transform hover:-translate-y-0.5 focus:outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}` }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <span className="f-mono text-sm font-semibold shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center" style={{ background: `${cm.color}22`, color: cm.color }}>{o.parada}</span>
+                          <div className="min-w-0"><p className="f-display text-base font-semibold" style={{ color: c.text }}>{o.cliente}</p><p className="f-body text-xs flex items-start gap-1.5 mt-1" style={{ color: c.textMuted }}><MapPin size={13} className="shrink-0 mt-0.5" /> <span>{o.direccion} · {o.barrio}</span></p><p className="f-mono text-[11px] mt-1" style={{ color: c.textFaint }}>{o.telefono}</p></div>
+                        </div>
+                        <EstadoBadge estado={o.estado} />
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-3 mt-4">
+                        <div className="rounded-xl p-3" style={{ background: c.surface }}><p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Día de entrega</p><p className="f-body text-sm font-medium mt-1" style={{ color: c.text }}>{formatearFechaEntrega(o.fechaEntrega)}</p>{o.fechaReasignadaManual && <span className="f-body inline-flex mt-1.5 text-[10px] px-2 py-0.5 rounded-full" style={{ background: c.amberSoft, color: c.amber }}>Fecha cambiada manualmente</span>}</div>
+                        <div className="rounded-xl p-3" style={{ background: c.surface }}><p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Horario</p><p className="f-body text-sm font-medium mt-1" style={{ color: o.horaDesde ? c.accent : c.textMuted }}>{formatearFranja(o.horaDesde, o.horaHasta)}</p></div>
+                      </div>
+
+                      {(o.notas || o.notaAdmin) && <div className="mt-3 space-y-1.5">{o.notas && <p className="f-body text-xs px-3 py-2 rounded-xl line-clamp-2" style={{ background: c.amberSoft, color: c.text }}><b>Cliente:</b> {o.notas}</p>}{o.notaAdmin && <p className="f-body text-xs px-3 py-2 rounded-xl line-clamp-2" style={{ background: c.accentSoft, color: c.text }}><b>Administración:</b> {o.notaAdmin}</p>}</div>}
+
+                      <div className="flex flex-wrap items-center gap-2 mt-4 pt-4" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+                        <span className="f-body text-xs" style={{ color: o.pagoConfirmado ? c.success : c.textMuted }}>{o.pagoConfirmado ? `${o.pagoConfirmado} confirmado ✓` : (o.pago || "—")}</span>
+                        {o.tieneComprobante && <button onClick={e => { e.stopPropagation(); abrirComprobante(o.id); }} disabled={abriendoComprobante === o.id} className="f-body inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium disabled:opacity-60" style={{ background: c.accentSoft, color: c.accent }} title="Ver captura del pago">{abriendoComprobante === o.id ? <Spinner size={11} /> : <Eye size={11} />} Comprobante</button>}
+                        <span className="f-mono text-base font-semibold ml-auto" style={{ color: c.accent }}>${Number(o.total || 0).toLocaleString("es-AR")}</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+                        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                          <select value={o.camionId} onChange={e => reasignar(o.id, e.target.value)} aria-label={`Asignar camión al pedido de ${o.cliente}`} className="f-body text-xs rounded-lg px-2.5 py-2 outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: camiones.find(x => x.id === o.camionId)?.color }}>
+                            {camiones.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+                          </select>
+                          {o.reasignadoManual && <span className="f-body text-[10px] px-2 py-1 rounded-full" style={{ background: c.amberSoft, color: c.amber }}>camión manual</span>}
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); abrirDetalle(o.id); }} className="f-body inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: c.accent, color: c.bgAlt }}>Ver detalle <ChevronRight size={14} /></button>
+                      </div>
+                    </article>
+                  ))}
                 </div>
               </div>
             ))}
@@ -1969,7 +2096,7 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
       </div>
 
       <div className="flex-1 min-w-0 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-4 md:px-6 py-5 md:py-6">
+        <div className="max-w-[1480px] mx-auto px-4 md:px-6 xl:px-8 py-5 md:py-6">
           <div className="flex items-center gap-2 mb-5"><Sparkles size={15} color={c.accent} className="shrink-0" /><h1 className="f-display text-lg font-semibold" style={{ color: c.text }}>{titles[view]}</h1></div>
           {view === "dashboard" && <AdminDashboard token={session.token} />}
           {view === "pedidos" && <AdminPedidos token={session.token} camiones={camiones} />}
