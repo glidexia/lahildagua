@@ -261,13 +261,10 @@ function generarFranjasVista(horaDesde, horaHasta) {
     const [h, m] = hora.split(":").map(Number);
     return h * 60 + m;
   };
-  const aHora = (total) => `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
   const desde = aMinutos(horaDesde);
   const hasta = aMinutos(horaHasta);
-  if (desde === null || hasta === null || hasta <= desde || (hasta - desde) % 60 !== 0) return [];
-  const franjas = [];
-  for (let inicio = desde; inicio < hasta; inicio += 60) franjas.push({ horaDesde: aHora(inicio), horaHasta: aHora(inicio + 60) });
-  return franjas;
+  if (desde === null || hasta === null || hasta <= desde) return [];
+  return [{ horaDesde, horaHasta }];
 }
 function crearDias(referencia = new Date()) {
   const desplazada = dias => new Date(referencia.getTime() + dias * 24 * 60 * 60 * 1000);
@@ -278,7 +275,13 @@ function crearDias(referencia = new Date()) {
   };
 }
 function isoDate(d) { return d.toISOString().slice(0, 10); }
-
+function fechaIsoBuenosAires(desplazamiento = 0) {
+  const fecha = new Date(Date.now() + desplazamiento * 24 * 60 * 60 * 1000);
+  const partes = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(fecha).filter(parte => parte.type !== "literal").map(parte => [parte.type, parte.value]));
+  return `${partes.year}-${partes.month}-${partes.day}`;
+}
 /* ---------------------------------- HELPERS UI ---------------------------------- */
 function Spinner({ size = 16 }) { const c = useTheme(); return <Loader2 size={size} color={c.textFaint} style={{ animation: "spin 0.9s linear infinite" }} />; }
 function Cargando({ label = "Cargando..." }) { const c = useTheme(); return <div className="flex items-center justify-center gap-2 py-10"><Spinner /><span className="f-body text-xs" style={{ color: c.textFaint }}>{label}</span></div>; }
@@ -915,6 +918,59 @@ function NotaCamionEditor({ pedidoId, valor, token, onGuardada }) {
   );
 }
 
+function CantidadesEntregadasEditor({ pedido, token, habilitado, onGuardado }) {
+  const c = useTheme();
+  const [editando, setEditando] = useState(false);
+  const [cantidades, setCantidades] = useState({});
+  const [guardando, setGuardando] = useState(false);
+  const firmaItems = (pedido.items || []).map(item => `${item.id}:${item.cantidad}`).join("|");
+
+  useEffect(() => {
+    setCantidades(Object.fromEntries((pedido.items || []).map(item => [item.id, item.cantidad])));
+    setEditando(false);
+  }, [pedido.id, firmaItems]);
+
+  if (!(pedido.items || []).length) return null;
+  const cambiar = (id, delta) => setCantidades(actual => ({ ...actual, [id]: Math.max(0, Math.min(999, Number(actual[id] || 0) + delta)) }));
+  const cambioPendiente = pedido.items.some(item => Number(cantidades[item.id]) !== Number(item.cantidad));
+
+  const guardar = async () => {
+    const items = pedido.items.map(item => ({ id: item.id, cantidad: Number(cantidades[item.id] || 0) }));
+    if (!items.some(item => item.cantidad > 0)) return mostrarErrorGlobal("El pedido debe conservar al menos un producto.");
+    setGuardando(true);
+    try {
+      const actualizado = await api(`/chofer/pedidos/${pedido.id}/items`, { method: "PATCH", token, body: { items } });
+      onGuardado?.(actualizado);
+      setEditando(false);
+    } finally { setGuardando(false); }
+  };
+
+  return (
+    <div className="rounded-xl p-2.5 mb-3" style={{ background: c.accentSoft, border: `1px solid ${c.borderSoft}` }}>
+      <div className="flex items-center justify-between gap-2">
+        <div><p className="f-body text-[11px] font-medium" style={{ color: c.text }}>Cantidad realmente entregada</p><p className="f-body text-[10px] mt-0.5" style={{ color: c.textFaint }}>Corregila si dejaste más o menos que lo pedido.</p></div>
+        {habilitado && !editando && <button onClick={() => setEditando(true)} className="f-body inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium" style={{ background: c.surface, color: c.accent }}><Pencil size={11} /> Modificar</button>}
+      </div>
+      {editando && (
+        <div className="space-y-2 mt-2.5">
+          {pedido.items.map(item => (
+            <div key={item.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2" style={{ background: c.surface }}>
+              <span className="f-body text-xs flex-1" style={{ color: c.text }}>{item.nombre}</span>
+              <button onClick={() => cambiar(item.id, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={12} color={c.textMuted} /></button>
+              <input type="number" min="0" max="999" value={cantidades[item.id] ?? 0} onChange={e => setCantidades(actual => ({ ...actual, [item.id]: Math.max(0, Math.min(999, Number(e.target.value) || 0)) }))} className="f-mono w-14 text-center text-xs px-1 py-1.5 rounded-lg outline-none" style={{ background: c.bgAlt, border: `1px solid ${c.border}`, color: c.text }} />
+              <button onClick={() => cambiar(item.id, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.accentSoft }}><Plus size={12} color={c.accent} /></button>
+            </div>
+          ))}
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setCantidades(Object.fromEntries(pedido.items.map(item => [item.id, item.cantidad]))); setEditando(false); }} disabled={guardando} className="f-body px-2.5 py-1.5 text-[11px]" style={{ color: c.textFaint }}>Cancelar</button>
+            <button onClick={guardar} disabled={guardando || !cambioPendiente} className="f-body inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={11} /> : <Save size={11} />} Guardar cantidades</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChoferPanel({ session, onLogout }) {
   const c = useTheme();
   const [dia, setDia] = useState("hoy");
@@ -1068,6 +1124,7 @@ function ChoferPanel({ session, onLogout }) {
                   )}
                   {o.notas && <p className="f-body text-[11px] mb-2 px-2.5 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.text }}><b>Nota del cliente:</b> {o.notas}</p>}
                   {o.notaAdmin && <p className="f-body text-[11px] mb-3 px-2.5 py-2 rounded-lg" style={{ background: c.accentSoft, color: c.text }}><b>Indicación de administración:</b> {o.notaAdmin}</p>}
+                  <CantidadesEntregadasEditor pedido={o} token={session.token} habilitado={diaEditable && o.estado !== "no_atendido"} onGuardado={actualizado => setPedidos(prev => prev.map(item => item.id === o.id ? { ...item, ...actualizado } : item))} />
                   <NotaCamionEditor pedidoId={o.id} valor={o.notaCamion} token={session.token} onGuardada={notaCamion => setPedidos(prev => prev.map(item => item.id === o.id ? { ...item, notaCamion } : item))} />
 
                   {diaEditable && o.estado === "pendiente" && confirmandoPago !== o.id && (
@@ -1185,6 +1242,133 @@ function AdminDashboard({ token }) {
 }
 
 /* ---------------------------------- ADMIN: PEDIDOS ---------------------------------- */
+function AdminNuevoPedido({ token, onClose, onCreado }) {
+  const c = useTheme();
+  const [segmento, setSegmento] = useState("consumo_personal");
+  const [productos, setProductos] = useState([]);
+  const [zonas, setZonas] = useState([]);
+  const [cantidades, setCantidades] = useState({});
+  const [disponibilidad, setDisponibilidad] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [form, setForm] = useState({ nombre: "", telefono: "", calle: "", barrio: "", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" });
+
+  useEffect(() => {
+    let vigente = true;
+    Promise.all([api("/public/productos"), api("/public/zonas")])
+      .then(([ps, zs]) => { if (vigente) { setProductos(ps); setZonas(zs); } })
+      .catch(() => {})
+      .finally(() => vigente && setCargando(false));
+    return () => { vigente = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!form.barrio) { setDisponibilidad([]); return; }
+    let vigente = true;
+    setCargandoDisponibilidad(true);
+    api(`/public/disponibilidad?barrio=${encodeURIComponent(form.barrio)}`)
+      .then(data => { if (vigente) setDisponibilidad(data.disponibilidad || []); })
+      .catch(() => { if (vigente) setDisponibilidad([]); })
+      .finally(() => vigente && setCargandoDisponibilidad(false));
+    return () => { vigente = false; };
+  }, [form.barrio]);
+
+  useEffect(() => {
+    const cerrar = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", cerrar);
+    return () => window.removeEventListener("keydown", cerrar);
+  }, [onClose]);
+
+  const productosVisibles = productos.filter(producto => producto.categoria === segmento);
+  const fechaElegida = disponibilidad.find(item => item.fecha === form.fechaEntrega);
+  const items = Object.entries(cantidades).filter(([, cantidad]) => cantidad > 0).map(([productoId, cantidad]) => ({ productoId: Number(productoId), cantidad }));
+  const total = items.reduce((suma, item) => suma + Number(productos.find(producto => producto.id === item.productoId)?.precio || 0) * item.cantidad, 0);
+  const cambiarCantidad = (id, delta) => setCantidades(actual => ({ ...actual, [id]: Math.max(0, Math.min(999, Number(actual[id] || 0) + delta)) }));
+
+  const guardar = async () => {
+    if (!form.nombre.trim() || !form.telefono.trim() || !form.calle.trim() || !form.barrio || !form.fechaEntrega || !form.horarioZonaId || !items.length) {
+      return mostrarErrorGlobal("Completá los datos, elegí fecha, horario y al menos un producto.");
+    }
+    setGuardando(true);
+    try {
+      const creado = await api("/admin/pedidos", {
+        method: "POST",
+        token,
+        body: {
+          ...form,
+          tipo: TIPO_DESTINO_POR_SEGMENTO[segmento] || "casa",
+          segmento,
+          horarioZonaId: Number(form.horarioZonaId),
+          items,
+        },
+      });
+      onCreado?.(creado);
+      onClose();
+    } finally { setGuardando(false); }
+  };
+
+  return (
+    <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }} className="modal-backdrop-in fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ zIndex: 1002, background: "rgba(2, 8, 23, 0.76)", backdropFilter: "blur(6px)" }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="nuevo-pedido-titulo" className="modal-card-in w-full max-w-5xl max-h-[94vh] overflow-y-auto rounded-3xl shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 px-5 md:px-7 py-5" style={{ background: c.surface, borderBottom: `1px solid ${c.borderSoft}` }}>
+          <div><p className="f-body text-[11px] uppercase tracking-wider" style={{ color: c.accent }}>Carga desde administración</p><h2 id="nuevo-pedido-titulo" className="f-display text-xl font-semibold mt-1" style={{ color: c.text }}>Nuevo pedido</h2></div>
+          <button onClick={onClose} className="p-2.5 rounded-xl" style={{ background: c.surfaceAlt }} aria-label="Cerrar"><X size={18} color={c.textMuted} /></button>
+        </div>
+        {cargando ? <Cargando label="Preparando el formulario..." /> : (
+          <div className="p-5 md:p-7 grid lg:grid-cols-[1fr_.9fr] gap-6">
+            <div className="space-y-4">
+              <div>
+                <p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>1. Datos del cliente</p>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <Input autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
+                  <Input type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
+                  <Input autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} />
+                  <select value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full px-3.5 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}><option value="">Barrio / localidad</option>{zonas.map(zona => <option key={zona.barrio} value={zona.barrio}>{zona.barrio} · {zona.camionNombre}</option>)}</select>
+                </div>
+              </div>
+
+              <div>
+                <p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>2. Catálogo y productos</p>
+                <div className="flex flex-wrap gap-1.5 mb-3">{OPCIONES_SEGMENTO.map(op => <button key={op.categoria} onClick={() => { setSegmento(op.categoria); setCantidades({}); }} className="f-body px-3 py-2 rounded-xl text-xs font-medium" style={{ background: segmento === op.categoria ? c.accentSoft : c.surfaceAlt, border: `1px solid ${segmento === op.categoria ? c.accent : c.border}`, color: segmento === op.categoria ? c.accent : c.textMuted }}>{op.label}</button>)}</div>
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {productosVisibles.map(producto => (
+                    <div key={producto.id} className="flex items-center gap-3 rounded-xl p-3" style={{ background: c.surfaceAlt, border: `1px solid ${c.borderSoft}` }}>
+                      <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}>{producto.imagenUrl ? <img src={producto.imagenUrl} alt="" className="w-full h-full object-cover" /> : <Package size={15} color={c.accent} />}</div>
+                      <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{producto.nombre}</p><p className="f-mono text-[11px]" style={{ color: c.accent }}>${Number(producto.precio).toLocaleString("es-AR")}</p></div>
+                      <button onClick={() => cambiarCantidad(producto.id, -1)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: c.surface }}><Minus size={13} color={c.textMuted} /></button>
+                      <input type="number" min="0" max="999" value={cantidades[producto.id] || 0} onChange={e => setCantidades(actual => ({ ...actual, [producto.id]: Math.max(0, Math.min(999, Number(e.target.value) || 0)) }))} className="f-mono w-14 text-center text-xs px-1 py-2 rounded-lg outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+                      <button onClick={() => cambiarCantidad(producto.id, 1)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: c.accentSoft }}><Plus size={13} color={c.accent} /></button>
+                    </div>
+                  ))}
+                  {!productosVisibles.length && <p className="f-body text-xs py-4 text-center" style={{ color: c.textFaint }}>No hay productos activos en este catálogo.</p>}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>3. Entrega</p>
+                {!form.barrio ? <p className="f-body text-xs rounded-xl p-3" style={{ background: c.surfaceAlt, color: c.textFaint }}>Elegí el barrio para ver sus días habilitados.</p> : cargandoDisponibilidad ? <Cargando label="Buscando fechas..." /> : disponibilidad.length ? (
+                  <div className="space-y-3">
+                    <div className="flex gap-2 overflow-x-auto pb-1">{disponibilidad.slice(0, 12).map(dia => <button key={dia.fecha} onClick={() => setForm({ ...form, fechaEntrega: dia.fecha, horarioZonaId: "" })} className="f-body shrink-0 px-3 py-2 rounded-xl text-xs" style={{ background: form.fechaEntrega === dia.fecha ? c.accentSoft : c.surfaceAlt, border: `1px solid ${form.fechaEntrega === dia.fecha ? c.accent : c.border}`, color: form.fechaEntrega === dia.fecha ? c.accent : c.textMuted }}>{new Date(`${dia.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" })}</button>)}</div>
+                    {fechaElegida && <div className="flex flex-wrap gap-2">{fechaElegida.horarios.map(horario => <button key={horario.id} onClick={() => setForm({ ...form, horarioZonaId: horario.id })} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: Number(form.horarioZonaId) === horario.id ? c.accentSoft : c.surfaceAlt, border: `1px solid ${Number(form.horarioZonaId) === horario.id ? c.accent : c.border}`, color: Number(form.horarioZonaId) === horario.id ? c.accent : c.textMuted }}>{formatearFranja(horario.horaDesde, horario.horaHasta)}</button>)}</div>}
+                  </div>
+                ) : <p className="f-body text-xs rounded-xl p-3" style={{ background: c.amberSoft, color: c.amber }}>Este barrio no tiene fechas disponibles.</p>}
+              </div>
+
+              <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>4. Pago y observaciones</p><div className="flex gap-2 mb-3">{PAGOS.map(pago => <button key={pago} onClick={() => setForm({ ...form, pago })} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: form.pago === pago ? c.accentSoft : c.surfaceAlt, border: `1px solid ${form.pago === pago ? c.accent : c.border}`, color: form.pago === pago ? c.accent : c.textMuted }}>{pago}</button>)}</div><textarea value={form.notas} maxLength={500} onChange={e => setForm({ ...form, notas: e.target.value })} rows={3} placeholder="Notas para el chofer (opcional)" className="f-body w-full px-3.5 py-2.5 rounded-xl text-sm outline-none resize-y" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
+
+              <div className="rounded-2xl p-4" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}><div className="flex justify-between gap-3"><span className="f-body text-sm" style={{ color: c.text }}>Total del pedido</span><span className="f-mono text-xl font-semibold" style={{ color: c.accent }}>${total.toLocaleString("es-AR")}</span></div><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>{items.reduce((suma, item) => suma + item.cantidad, 0)} unidad{items.reduce((suma, item) => suma + item.cantidad, 0) !== 1 ? "es" : ""}</p></div>
+              <button onClick={guardar} disabled={guardando} className="f-body w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={14} /> : <Plus size={15} />} Crear pedido y enviarlo al chofer</button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function AdminPedidos({ token, camiones }) {
   const c = useTheme();
   const [q, setQ] = useState(""); const [fCamion, setFCamion] = useState("todos"); const [fEstado, setFEstado] = useState("todos"); const [fDia, setFDia] = useState("hoy");
@@ -1201,6 +1385,7 @@ function AdminPedidos({ token, camiones }) {
   const [notaAdmin, setNotaAdmin] = useState("");
   const [guardandoDetalle, setGuardandoDetalle] = useState(false);
   const [okDetalle, setOkDetalle] = useState("");
+  const [nuevoPedidoAbierto, setNuevoPedidoAbierto] = useState(false);
 
   const cerrarComprobante = useCallback(() => {
     setComprobanteUrl(actual => { if (actual) URL.revokeObjectURL(actual); return ""; });
@@ -1293,6 +1478,7 @@ function AdminPedidos({ token, camiones }) {
 
   return (
     <div className="space-y-4">
+      {nuevoPedidoAbierto && <AdminNuevoPedido token={token} onClose={() => setNuevoPedidoAbierto(false)} onCreado={() => { setFDia("todos"); setDesde(""); setHasta(""); cargar(false); }} />}
       <ComprobanteModal url={comprobanteUrl} onClose={cerrarComprobante} />
       {detalleId && (
         <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) cerrarDetalle(); }} className="modal-backdrop-in fixed inset-0 flex items-center justify-center p-3 md:p-6" style={{ zIndex: 1001, background: "rgba(2, 8, 23, 0.76)", backdropFilter: "blur(6px)" }}>
@@ -1341,13 +1527,13 @@ function AdminPedidos({ token, camiones }) {
                   </div>
                 </div>
 
-                {detalle.estado === "pendiente" ? <div className="rounded-2xl p-4 md:p-5" style={{ background: c.accentSoft, border: `1px solid ${c.border}` }}>
+                {["pendiente", "no_atendido"].includes(detalle.estado) ? <div className="rounded-2xl p-4 md:p-5" style={{ background: c.accentSoft, border: `1px solid ${c.border}` }}>
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 mb-4">
-                    <div><h3 className="f-display text-base font-semibold flex items-center gap-2" style={{ color: c.text }}><CalendarClock size={17} color={c.accent} /> Cambiar entrega manualmente</h3><p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>Al guardar, el pedido se mueve al día nuevo en administración y en la ruta del chofer.</p></div>
+                    <div><h3 className="f-display text-base font-semibold flex items-center gap-2" style={{ color: c.text }}><CalendarClock size={17} color={c.accent} /> {detalle.estado === "no_atendido" ? "Reagendar pedido" : "Cambiar entrega manualmente"}</h3><p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>{detalle.estado === "no_atendido" ? "Al guardarlo vuelve a Pendiente y aparece en la ruta del nuevo día." : "Al guardar, el pedido se mueve al día nuevo en administración y en la ruta del chofer."}</p></div>
                     <div className="md:text-right"><p className="f-body text-[11px]" style={{ color: c.textFaint }}>Entrega actual</p><p className="f-body text-sm font-semibold mt-1" style={{ color: c.accent }}>{formatearFechaEntrega(detalle.fechaEntrega)}</p>{detalle.fechaEntregaOriginal && <p className="f-body text-[11px] mt-1" style={{ color: c.textMuted }}>Solicitada originalmente: {formatearFechaEntrega(detalle.fechaEntregaOriginal)}</p>}</div>
                   </div>
                   <div className="grid md:grid-cols-[240px_1fr] gap-3">
-                    <div><label className="f-body block text-xs mb-1.5" style={{ color: c.textMuted }}>Nueva fecha</label><Input type="date" value={fechaManual} onChange={e => { setFechaManual(e.target.value); setOkDetalle(""); }} /></div>
+                    <div><label className="f-body block text-xs mb-1.5" style={{ color: c.textMuted }}>Nueva fecha</label><Input type="date" value={fechaManual} onChange={e => { setFechaManual(e.target.value); setOkDetalle(""); }} /><button onClick={() => { setFechaManual(fechaIsoBuenosAires(1)); setOkDetalle(""); }} className="f-body mt-2 w-full px-3 py-2 rounded-xl text-xs font-medium" style={{ background: c.surface, color: c.accent, border: `1px solid ${c.border}` }}>Pasar para mañana</button></div>
                     <div><label className="f-body block text-xs mb-1.5" style={{ color: c.textMuted }}>Nota interna para el chofer (opcional)</label><textarea value={notaAdmin} maxLength={500} onChange={e => { setNotaAdmin(e.target.value); setOkDetalle(""); }} rows={3} placeholder="Ej.: el cliente confirmó que puede recibir antes; llamar al llegar..." className="f-body w-full px-3.5 py-2.5 rounded-xl text-sm outline-none resize-y" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} /><p className="f-body text-[10px] text-right mt-1" style={{ color: c.textFaint }}>{notaAdmin.length}/500</p></div>
                   </div>
                   {okDetalle && <p className="f-body text-xs mt-3 flex items-center gap-1.5" style={{ color: c.success }}><CheckCircle2 size={13} /> {okDetalle}</p>}
@@ -1360,7 +1546,8 @@ function AdminPedidos({ token, camiones }) {
       )}
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}>
         <ArrowLeftRight size={14} color={c.accent} />
-        <p className="f-body text-xs" style={{ color: c.text }}>Los pedidos se ordenan como hoja de ruta. Tocá cualquier tarjeta para ver todos sus datos, cambiar la fecha o dejarle una indicación al chofer.</p>
+        <p className="f-body text-xs flex-1" style={{ color: c.text }}>Los pedidos se ordenan como hoja de ruta. Tocá cualquier tarjeta para ver todos sus datos, cambiar la fecha o dejarle una indicación al chofer.</p>
+        <button onClick={() => setNuevoPedidoAbierto(true)} className="f-body shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: c.accent, color: c.bgAlt }}><Plus size={14} /> Cargar pedido</button>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" color={c.textFaint} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar cliente..." className="f-body w-full pl-8 pr-3 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
@@ -1870,7 +2057,7 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
   const guardar = async () => {
     setOk(""); setError("");
     if (!agenda.diasSemana.length) return setError("Elegí al menos un día de reparto.");
-    if (!franjas.length) return setError("La franja debe poder dividirse exactamente en turnos de 60 minutos.");
+    if (!franjas.length) return setError("Ingresá un rango horario válido.");
     setGuardando(true);
     try {
       const data = await api(`/admin/zonas/${zonaId}/agenda`, {
@@ -1878,7 +2065,7 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
         body: { ...agenda, cupoMaximo: Number(agenda.cupoMaximo) },
       });
       setAgenda({ diasSemana: data.diasSemana, horaDesde: data.horaDesde, horaHasta: data.horaHasta, cupoMaximo: String(data.cupoMaximo) });
-      setOk(`Horario de ${data.barrio} guardado: ${data.diasSemana.length * franjas.length} turnos disponibles.`);
+      setOk(`Horario de ${data.barrio} guardado: ${data.horaDesde} a ${data.horaHasta}.`);
       onGuardado?.();
     } catch (e) { setError(e.message || "No pudimos guardar la agenda."); }
     setGuardando(false);
@@ -1888,7 +2075,7 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
     <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
       <div className="flex items-start gap-2 mb-3">
         <CalendarClock size={16} color={c.accent} className="mt-0.5 shrink-0" />
-        <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Horarios de entrega por barrio</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Elegí un barrio y definí sus días y horario. Solamente los clientes de ese barrio verán estos turnos.</p></div>
+        <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Horarios de entrega por barrio</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Elegí un barrio y definí sus días y rango horario. El cliente verá el rango completo, por ejemplo de 10:00 a 13:00.</p></div>
       </div>
       {zonas.length === 0 ? <p className="f-body text-xs" style={{ color: c.textFaint }}>Primero agregá un barrio.</p> : (
         <div className="space-y-3">
@@ -1913,23 +2100,19 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
                 <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Finaliza
                   <input type="time" step="3600" value={agenda.horaHasta} onChange={e => setAgenda({ ...agenda, horaHasta: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
                 </label>
-                <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Cupo por turno
+                <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Cupo del rango
                   <input type="number" min="1" max="100" value={agenda.cupoMaximo} onChange={e => setAgenda({ ...agenda, cupoMaximo: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
                 </label>
               </div>
-              <div className="rounded-xl p-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}>
-                <p className="f-body text-xs font-medium" style={{ color: c.text }}>Vista previa de turnos de 60 minutos</p>
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {franjas.map(franja => <span key={franja.horaDesde} className="f-mono text-[10px] rounded-lg px-2 py-1" style={{ background: c.surface, color: c.accent, border: `1px solid ${c.border}` }}>{franja.horaDesde}–{franja.horaHasta}</span>)}
-                  {!franjas.length && <span className="f-body text-[11px]" style={{ color: c.amber }}>Revisá las horas: la duración total debe ser múltiplo de 60 minutos.</span>}
-                </div>
-                <p className="f-body text-[10px] mt-2" style={{ color: c.textFaint }}>{zona ? `Se aplicará solamente a ${zona.barrio}. ${zona.camionNombre ? `El reparto está asignado a ${zona.camionNombre}.` : "Todavía falta asignarle un camión."}` : "Elegí un barrio para configurar sus entregas."}</p>
+              <div className="rounded-xl p-3 flex flex-wrap items-center gap-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}>
+                <div className="flex-1"><p className="f-body text-xs font-medium" style={{ color: c.text }}>Rango que verá el cliente</p><p className="f-body text-[10px] mt-1" style={{ color: c.textFaint }}>{zona ? `Se aplicará solamente a ${zona.barrio}. ${zona.camionNombre ? `El reparto está asignado a ${zona.camionNombre}.` : "Todavía falta asignarle un camión."}` : "Elegí un barrio para configurar sus entregas."}</p></div>
+                {franjas.length ? <span className="f-mono text-sm rounded-xl px-3 py-2" style={{ background: c.surface, color: c.accent, border: `1px solid ${c.border}` }}>{agenda.horaDesde}–{agenda.horaHasta}</span> : <span className="f-body text-[11px]" style={{ color: c.amber }}>Revisá las horas.</span>}
               </div>
               <ErrorBanner mensaje={error} />
               {error && <p className="f-body text-xs" style={{ color: c.danger }}>{error}</p>}
               {ok && <p className="f-body text-xs" style={{ color: c.success }}>{ok}</p>}
               <button disabled={guardando || !zona || !agenda.diasSemana.length || !franjas.length} onClick={guardar} className="f-body w-full px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={13} /> : <Save size={13} />} Guardar horario de {zona?.barrio || "este barrio"}</button>
-              <p className="f-body text-[10px]" style={{ color: c.textFaint }}>Cuando el cliente elija este barrio, verá únicamente sus fechas y turnos disponibles. El chofer seguirá recibiendo los pedidos ordenados por horario y recorrido.</p>
+              <p className="f-body text-[10px]" style={{ color: c.textFaint }}>Cuando el cliente elija este barrio, verá únicamente sus fechas y el rango completo disponible. El chofer seguirá recibiendo los pedidos ordenados por horario y recorrido.</p>
             </>
           )}
         </div>
