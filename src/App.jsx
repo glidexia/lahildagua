@@ -1103,7 +1103,7 @@ function ChoferPanel({ session, onLogout }) {
         <ErrorBanner mensaje={error} />
         {cargando ? <Cargando /> : (
           <>
-            <p className="f-body text-[11px] mb-3 flex items-center gap-1.5" style={{ color: c.textFaint }}><MapPin size={11} /> Orden de parada según tu ruta</p>
+            <p className="f-body text-[11px] mb-3 flex items-center gap-1.5" style={{ color: c.textFaint }}><MapPin size={11} /> Orden automático por cercanía desde el galpón</p>
             <div className="space-y-2.5">
               {pedidos.map((o) => (
                 <div key={o.id} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: dia === "manana" ? 0.75 : 1 }}>
@@ -1546,7 +1546,7 @@ function AdminPedidos({ token, camiones }) {
       )}
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}>
         <ArrowLeftRight size={14} color={c.accent} />
-        <p className="f-body text-xs flex-1" style={{ color: c.text }}>Los pedidos se ordenan como hoja de ruta. Tocá cualquier tarjeta para ver todos sus datos, cambiar la fecha o dejarle una indicación al chofer.</p>
+        <p className="f-body text-xs flex-1" style={{ color: c.text }}>Los pedidos se ordenan automáticamente por cercanía geográfica dentro de cada franja, partiendo desde el galpón. Tocá cualquier tarjeta para ver todos sus datos o hacer cambios.</p>
         <button onClick={() => setNuevoPedidoAbierto(true)} className="f-body shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: c.accent, color: c.bgAlt }}><Plus size={14} /> Cargar pedido</button>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
@@ -2213,10 +2213,13 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
   const [datosBanco, setDatosBanco] = useState({ titular: "", banco: "", alias: "", cbu: "", cuit: "" });
   const [guardandoBanco, setGuardandoBanco] = useState(false);
   const [okBanco, setOkBanco] = useState(""); const [errorBanco, setErrorBanco] = useState("");
+  const [logistica, setLogistica] = useState({ direccionBase: "", configurada: false });
+  const [guardandoLogistica, setGuardandoLogistica] = useState(false);
+  const [okLogistica, setOkLogistica] = useState(""); const [errorLogistica, setErrorLogistica] = useState("");
 
   useEffect(() => {
     api("/admin/perfil", { token }).then(p => { setPerfil(p); setNombre(p.nombre); setUsuario(p.usuario); });
-    api("/admin/configuracion", { token }).then(d => { setAreaPrivadaConfigurada(d.areaPrivadaConfigurada); setDatosBanco(d.transferencia || { titular: "", banco: "", alias: "", cbu: "", cuit: "" }); });
+    api("/admin/configuracion", { token }).then(d => { setAreaPrivadaConfigurada(d.areaPrivadaConfigurada); setDatosBanco(d.transferencia || { titular: "", banco: "", alias: "", cbu: "", cuit: "" }); setLogistica(d.logistica || { direccionBase: "", configurada: false }); });
   }, [token]);
 
   const guardarPerfil = async () => {
@@ -2249,6 +2252,15 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
     setGuardandoBanco(false);
   };
 
+  const guardarLogistica = async () => {
+    setGuardandoLogistica(true); setOkLogistica(""); setErrorLogistica("");
+    try {
+      const d = await api("/admin/configuracion", { method: "PATCH", token, body: { logistica: { direccionBase: logistica.direccionBase } } });
+      setLogistica(d.logistica); setOkLogistica(d.logistica.configurada ? "Punto de salida ubicado. Las rutas se ordenarán automáticamente desde acá." : "Punto de salida desactivado.");
+    } catch (e) { setErrorLogistica(e.message || "No se pudo ubicar el punto de salida."); }
+    setGuardandoLogistica(false);
+  };
+
   if (!perfil) return <Cargando />;
 
   return (
@@ -2267,6 +2279,19 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
           {okPerfil && <p className="f-body text-[11px]" style={{ color: c.success }}>{okPerfil}</p>}
           <button onClick={guardarPerfil} disabled={guardandoPerfil} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center gap-2 disabled:opacity-70" style={{ background: c.accent, color: c.bgAlt }}>{guardandoPerfil && <Spinner size={13} />} Guardar cambios</button>
         </div>
+      </div>
+
+      <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-body text-sm font-medium mb-1 flex items-center gap-1.5" style={{ color: c.text }}><MapPin size={15} /> Punto de salida del reparto</p>
+        <p className="f-body text-[11px] mb-3" style={{ color: c.textFaint }}>Ingresá la dirección exacta del galpón. Dentro de cada franja, el sistema geolocaliza los pedidos y arma automáticamente el recorrido desde este punto.</p>
+        <div className="flex flex-col sm:flex-row gap-2 max-w-2xl">
+          <Input placeholder="Calle, altura y localidad del galpón" value={logistica.direccionBase || ""} onChange={e => setLogistica({ ...logistica, direccionBase: e.target.value, configurada: false })} />
+          <button onClick={guardarLogistica} disabled={guardandoLogistica} className="f-body px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-70 shrink-0" style={{ background: c.accent, color: c.bgAlt }}>{guardandoLogistica ? <Spinner size={13} /> : <MapPin size={13} />} Ubicar galpón</button>
+        </div>
+        <ErrorBanner mensaje={errorLogistica} />
+        {okLogistica && <p className="f-body text-[11px] mt-2" style={{ color: c.success }}>{okLogistica}</p>}
+        {logistica.configurada && <p className="f-body text-[11px] mt-2 px-3 py-2 rounded-xl" style={{ color: c.accent, background: c.accentSoft }}>✓ Geolocalización activa para las hojas de ruta.</p>}
+        <p className="f-body text-[10px] mt-2" style={{ color: c.textFaint }}>Ubicación aproximada obtenida mediante OpenStreetMap. Si cambiás el domicilio, volvé a guardarlo.</p>
       </div>
 
       <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
