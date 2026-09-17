@@ -6,7 +6,7 @@ import {
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
   Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
-  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw, ArrowLeft
+  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -971,6 +971,88 @@ function CantidadesEntregadasEditor({ pedido, token, habilitado, onGuardado }) {
   );
 }
 
+function CajaChofer({ session, dia, pedidos }) {
+  const c = useTheme();
+  const [caja, setCaja] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [monto, setMonto] = useState("");
+  const [concepto, setConcepto] = useState("");
+  const [responsable, setResponsable] = useState(session.nombre || "");
+  const [declarado, setDeclarado] = useState("");
+  const [observaciones, setObservaciones] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const desplazamiento = dia === "ayer" ? -1 : dia === "manana" ? 1 : 0;
+  const fecha = fechaIsoBuenosAires(desplazamiento);
+  const firmaPedidos = pedidos.map(p => `${p.id}:${p.estado}:${p.pagoConfirmado || ""}:${p.total}`).join("|");
+  const moneda = valor => `$${Number(valor || 0).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+  const cargar = useCallback(async () => {
+    if (dia === "manana") return setCaja(null);
+    setCargando(true);
+    try {
+      const data = await api(`/chofer/caja?fecha=${fecha}`, { token: session.token });
+      setCaja(data);
+      setObservaciones(data.observaciones || "");
+      setDeclarado(data.efectivoDeclarado == null ? String(data.efectivoEsperado ?? "") : String(data.efectivoDeclarado));
+    } finally { setCargando(false); }
+  }, [dia, fecha, session.token]);
+
+  useEffect(() => { cargar(); }, [cargar, firmaPedidos]);
+  if (dia === "manana") return null;
+
+  const agregar = async () => {
+    setGuardando(true);
+    try {
+      const data = await api("/chofer/caja/extracciones", { method: "POST", token: session.token, body: { fecha, monto: Number(monto), concepto, responsable } });
+      setCaja(data); setMonto(""); setConcepto(""); setDeclarado(String(data.efectivoEsperado));
+    } finally { setGuardando(false); }
+  };
+  const quitar = async id => {
+    setGuardando(true);
+    try {
+      const data = await api(`/chofer/caja/extracciones/${id}`, { method: "DELETE", token: session.token });
+      setCaja(data); setDeclarado(String(data.efectivoEsperado));
+    } finally { setGuardando(false); }
+  };
+  const cerrar = async () => {
+    const ok = await confirmarAccion({ titulo: "Cerrar la caja del día", mensaje: `Se registrará una rendición de ${moneda(declarado)}. Después solamente administración podrá reabrirla.`, textoConfirmar: "Cerrar caja", peligro: false });
+    if (!ok) return;
+    setGuardando(true);
+    try { setCaja(await api("/chofer/caja/cerrar", { method: "POST", token: session.token, body: { fecha, efectivoDeclarado: Number(declarado), observaciones } })); }
+    finally { setGuardando(false); }
+  };
+
+  return (
+    <section className="mt-5 rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div><p className="f-display text-base font-semibold flex items-center gap-2" style={{ color: c.text }}><Wallet size={17} color={c.accent} /> Cierre de caja</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Rendición del reparto y productos entregados.</p></div>
+        {caja?.cerrado && <span className="f-body text-[11px] px-2.5 py-1 rounded-full" style={{ background: c.successSoft, color: c.success }}>Caja cerrada</span>}
+      </div>
+      {cargando && !caja ? <Cargando label="Calculando caja..." /> : caja && <>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <ResumenCajaDato label="Ventas entregadas" valor={moneda(caja.ventasTotal)} color={c.text} fondo={c.surfaceAlt} />
+          <ResumenCajaDato label="Efectivo cobrado" valor={moneda(caja.efectivoCobrado)} color={c.success} fondo={c.successSoft} />
+          <ResumenCajaDato label="Transferencias" valor={moneda(caja.transferenciasCobradas)} color={c.accent} fondo={c.accentSoft} />
+          <ResumenCajaDato label="Pendiente de cobro" valor={moneda(caja.pendienteCobro)} color={caja.pendienteCobro ? c.amber : c.text} fondo={caja.pendienteCobro ? c.amberSoft : c.surfaceAlt} />
+        </div>
+        <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Productos entregados</p>{caja.productos.length ? <div className="space-y-1.5">{caja.productos.map(producto => <div key={producto.nombre} className="flex justify-between text-xs"><span className="f-body" style={{ color: c.textMuted }}>{producto.nombre}</span><span className="f-mono" style={{ color: c.text }}>{producto.cantidad} un.</span></div>)}</div> : <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Todavía no hay entregas registradas.</p>}</div>
+        <div className="mb-4 pt-3" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+          <div className="flex justify-between items-center mb-2"><p className="f-body text-xs font-medium" style={{ color: c.text }}>Extracciones de efectivo</p><span className="f-mono text-xs" style={{ color: c.danger }}>− {moneda(caja.extraccionesTotal)}</span></div>
+          <div className="space-y-1.5 mb-3">{caja.extracciones.map(item => <div key={item.id} className="flex items-start gap-2 rounded-lg px-2.5 py-2" style={{ background: c.dangerSoft }}><div className="min-w-0 flex-1"><p className="f-body text-[11px] font-medium" style={{ color: c.text }}>{item.concepto}</p><p className="f-body text-[10px]" style={{ color: c.textFaint }}>{item.responsable}</p></div><span className="f-mono text-[11px]" style={{ color: c.danger }}>− {moneda(item.monto)}</span>{!caja.cerrado && <button onClick={() => quitar(item.id)} disabled={guardando} aria-label="Quitar extracción"><Trash2 size={13} color={c.danger} /></button>}</div>)}</div>
+          {!caja.cerrado && <div className="grid grid-cols-2 gap-2"><Input type="number" min="0" step="1" placeholder="Monto retirado" value={monto} onChange={e => setMonto(e.target.value)} /><Input placeholder="Responsable" value={responsable} onChange={e => setResponsable(e.target.value)} /><Input className="col-span-2" placeholder="Motivo, por ejemplo: combustible" value={concepto} onChange={e => setConcepto(e.target.value)} /><button onClick={agregar} disabled={guardando || !monto || !concepto.trim() || !responsable.trim()} className="f-body col-span-2 py-2 rounded-xl text-xs font-medium disabled:opacity-40" style={{ background: c.dangerSoft, color: c.danger }}>Registrar extracción</button></div>}
+        </div>
+        <div className="rounded-xl p-3 mb-3" style={{ background: c.accentSoft }}><div className="flex justify-between items-end"><div><p className="f-body text-[10px]" style={{ color: c.textFaint }}>Efectivo esperado para rendir</p><p className="f-body text-[10px] mt-1" style={{ color: c.textMuted }}>Efectivo cobrado menos extracciones</p></div><p className="f-mono text-xl font-semibold" style={{ color: c.accent }}>{moneda(caja.efectivoEsperado)}</p></div></div>
+        {caja.cerrado ? <div className="space-y-2"><div className="flex justify-between text-sm"><span className="f-body" style={{ color: c.textMuted }}>Efectivo entregado</span><span className="f-mono" style={{ color: c.text }}>{moneda(caja.efectivoDeclarado)}</span></div><div className="flex justify-between text-sm"><span className="f-body" style={{ color: c.textMuted }}>Diferencia</span><span className="f-mono" style={{ color: caja.diferencia === 0 ? c.success : c.danger }}>{moneda(caja.diferencia)}</span></div>{caja.observaciones && <p className="f-body text-[11px] rounded-lg p-2" style={{ background: c.surfaceAlt, color: c.textMuted }}>{caja.observaciones}</p>}</div> : <div className="space-y-2"><Input type="number" min="0" step="1" placeholder="Efectivo que entregás" value={declarado} onChange={e => setDeclarado(e.target.value)} /><textarea rows={2} placeholder="Observaciones del cierre (opcional)" value={observaciones} maxLength={500} onChange={e => setObservaciones(e.target.value)} className="f-body w-full px-3.5 py-2.5 rounded-xl text-sm outline-none resize-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} /><button onClick={cerrar} disabled={guardando || declarado === ""} className="f-body w-full py-2.5 rounded-xl text-xs font-semibold disabled:opacity-50 inline-flex justify-center items-center gap-2" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={13} /> : <Wallet size={14} />} Cerrar y rendir caja</button></div>}
+      </>}
+    </section>
+  );
+}
+
+function ResumenCajaDato({ label, valor, color, fondo }) {
+  const c = useTheme();
+  return <div className="rounded-xl p-3" style={{ background: fondo }}><p className="f-body text-[10px]" style={{ color: c.textFaint }}>{label}</p><p className="f-mono text-base mt-1" style={{ color }}>{valor}</p></div>;
+}
+
 function ChoferPanel({ session, onLogout }) {
   const c = useTheme();
   const [dia, setDia] = useState("hoy");
@@ -1154,6 +1236,7 @@ function ChoferPanel({ session, onLogout }) {
               ))}
               {pedidos.length === 0 && <p className="f-body text-xs text-center py-8" style={{ color: c.textFaint }}>Sin pedidos para este día.</p>}
             </div>
+            <CajaChofer session={session} dia={dia} pedidos={pedidos} />
           </>
         )}
       </div>
@@ -2323,6 +2406,48 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
   );
 }
 
+function AdminCajas({ token }) {
+  const c = useTheme();
+  const [fecha, setFecha] = useState(() => fechaIsoBuenosAires());
+  const [cajas, setCajas] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const moneda = valor => `$${Number(valor || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
+  const cargar = useCallback(async (spinner = true) => {
+    if (spinner) setCargando(true);
+    try { setCajas((await api(`/admin/cajas?fecha=${fecha}`, { token })).cajas || []); }
+    finally { if (spinner) setCargando(false); }
+  }, [fecha, token]);
+  useEffect(() => { cargar(); }, [cargar]);
+  useEffect(() => { const timer = setInterval(() => cargar(false), 15000); return () => clearInterval(timer); }, [cargar]);
+
+  const reabrir = async caja => {
+    const ok = await confirmarAccion({ titulo: `Reabrir caja de ${caja.camion.nombre}`, mensaje: "El chofer podrá corregirla y volver a rendirla. El próximo cierre recalculará ventas y cobros.", textoConfirmar: "Reabrir caja", peligro: false });
+    if (!ok) return;
+    await api(`/admin/cajas/${caja.id}/reabrir`, { method: "PATCH", token });
+    cargar(false);
+  };
+  const totales = cajas.reduce((a, caja) => ({
+    efectivo: a.efectivo + Number(caja.efectivoCobrado || 0), transferencias: a.transferencias + Number(caja.transferenciasCobradas || 0),
+    extracciones: a.extracciones + Number(caja.extraccionesTotal || 0), rendir: a.rendir + Number(caja.efectivoEsperado || 0),
+  }), { efectivo: 0, transferencias: 0, extracciones: 0, rendir: 0 });
+
+  return <div className="space-y-4">
+    <div className="rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Rendición diaria por camión</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Ventas, unidades entregadas, extracciones y efectivo final.</p></div><Input type="date" value={fecha} max={fechaIsoBuenosAires()} onChange={e => setFecha(e.target.value)} className="max-w-[180px]" /></div>
+    {cargando ? <Cargando label="Calculando cierres..." /> : <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><ResumenCajaDato label="Efectivo cobrado" valor={moneda(totales.efectivo)} color={c.success} fondo={c.surface} /><ResumenCajaDato label="Transferencias" valor={moneda(totales.transferencias)} color={c.accent} fondo={c.surface} /><ResumenCajaDato label="Extracciones" valor={`− ${moneda(totales.extracciones)}`} color={c.danger} fondo={c.surface} /><ResumenCajaDato label="Efectivo esperado" valor={moneda(totales.rendir)} color={c.text} fondo={c.surface} /></div>
+      <div className="grid lg:grid-cols-2 gap-4">{cajas.map(caja => <article key={caja.camion.id} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <div className="flex items-start justify-between gap-3 mb-4"><div><CamionChip camion={caja.camion} /><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{caja.choferNombre || "Sin chofer"} · {caja.pedidosEntregados} entregas</p></div><span className="f-body text-[11px] px-2.5 py-1 rounded-full" style={{ background: caja.cerrado ? c.successSoft : c.amberSoft, color: caja.cerrado ? c.success : c.amber }}>{caja.cerrado ? "Cerrada" : "Pendiente de cierre"}</span></div>
+        <div className="grid grid-cols-2 gap-2 mb-4"><ResumenCajaDato label="Ventas" valor={moneda(caja.ventasTotal)} color={c.text} fondo={c.surfaceAlt} /><ResumenCajaDato label="Efectivo" valor={moneda(caja.efectivoCobrado)} color={c.success} fondo={c.successSoft} /><ResumenCajaDato label="Transferencias" valor={moneda(caja.transferenciasCobradas)} color={c.accent} fondo={c.accentSoft} /><ResumenCajaDato label="Sin cobrar" valor={moneda(caja.pendienteCobro)} color={caja.pendienteCobro ? c.amber : c.textMuted} fondo={caja.pendienteCobro ? c.amberSoft : c.surfaceAlt} /></div>
+        <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Unidades vendidas</p>{caja.productos.length ? <div className="space-y-1">{caja.productos.map(producto => <div key={producto.nombre} className="flex justify-between text-[11px]"><span className="f-body" style={{ color: c.textMuted }}>{producto.nombre}</span><span className="f-mono" style={{ color: c.text }}>{producto.cantidad}</span></div>)}</div> : <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Sin entregas.</p>}</div>
+        {!!caja.extracciones.length && <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Extracciones</p>{caja.extracciones.map(item => <div key={item.id} className="flex justify-between gap-3 text-[11px] py-1"><span className="f-body" style={{ color: c.textMuted }}>{item.concepto} · {item.responsable}</span><span className="f-mono shrink-0" style={{ color: c.danger }}>− {moneda(item.monto)}</span></div>)}</div>}
+        <div className="rounded-xl p-3" style={{ background: c.accentSoft }}><div className="flex justify-between"><span className="f-body text-xs" style={{ color: c.textMuted }}>Efectivo esperado</span><span className="f-mono font-semibold" style={{ color: c.accent }}>{moneda(caja.efectivoEsperado)}</span></div>{caja.cerrado && <><div className="flex justify-between mt-2"><span className="f-body text-xs" style={{ color: c.textMuted }}>Declarado</span><span className="f-mono" style={{ color: c.text }}>{moneda(caja.efectivoDeclarado)}</span></div><div className="flex justify-between mt-2"><span className="f-body text-xs" style={{ color: c.textMuted }}>Diferencia</span><span className="f-mono" style={{ color: caja.diferencia === 0 ? c.success : c.danger }}>{moneda(caja.diferencia)}</span></div></>}</div>
+        {caja.observaciones && <p className="f-body text-[11px] mt-3 rounded-lg p-2" style={{ color: c.textMuted, background: c.surfaceAlt }}>{caja.observaciones}</p>}
+        {caja.cerrado && <button onClick={() => reabrir(caja)} className="f-body mt-3 text-[11px] underline" style={{ color: c.textMuted }}>Reabrir caja para corregir</button>}
+      </article>)}</div>
+    </>}
+  </div>;
+}
+
 /* ---------------------------------- ADMIN PANEL (sidebar) ---------------------------------- */
 function AdminPanel({ session, onLogout, modo, setModo }) {
   const c = useTheme();
@@ -2336,12 +2461,13 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
     { id: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
     { id: "pedidos", label: "Pedidos", Icon: ClipboardList },
     { id: "clientes", label: "Clientes", Icon: Users },
+    { id: "cajas", label: "Caja", Icon: Wallet },
     { id: "catalogo", label: "Catálogo", Icon: Boxes },
     { id: "camiones", label: "Camiones", Icon: Truck },
     { id: "calendario", label: "Días no hábiles", Icon: CalendarClock },
     { id: "configuracion", label: "Mi cuenta", Icon: Settings },
   ];
-  const titles = { dashboard: "Dashboard general", pedidos: "Pedidos", clientes: "Base de clientes", catalogo: "Catálogo de productos", camiones: "Camiones y zonas", calendario: "Días no hábiles", configuracion: "Mi cuenta y configuración" };
+  const titles = { dashboard: "Dashboard general", pedidos: "Pedidos", clientes: "Base de clientes", cajas: "Cierres de caja", catalogo: "Catálogo de productos", camiones: "Camiones y zonas", calendario: "Días no hábiles", configuracion: "Mi cuenta y configuración" };
 
   return (
     <div className="flex-1 flex flex-col md:flex-row" style={{ background: c.bg }}>
@@ -2382,6 +2508,7 @@ function AdminPanel({ session, onLogout, modo, setModo }) {
           {view === "dashboard" && <AdminDashboard token={session.token} />}
           {view === "pedidos" && <AdminPedidos token={session.token} camiones={camiones} />}
           {view === "clientes" && <AdminClientes token={session.token} />}
+          {view === "cajas" && <AdminCajas token={session.token} />}
           {view === "catalogo" && <AdminCatalogo token={session.token} />}
           {view === "camiones" && <AdminCamiones token={session.token} />}
           {view === "calendario" && <AdminCalendario token={session.token} />}
