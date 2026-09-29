@@ -2492,16 +2492,31 @@ function AdminCajas({ token }) {
     efectivo: a.efectivo + Number(caja.efectivoCobrado || 0), transferencias: a.transferencias + Number(caja.transferenciasCobradas || 0),
     extracciones: a.extracciones + Number(caja.extraccionesTotal || 0), rendir: a.rendir + Number(caja.efectivoEsperado || 0),
   }), { efectivo: 0, transferencias: 0, extracciones: 0, rendir: 0 });
+  const hoyIso = fechaIsoBuenosAires();
+  const inicioSemana = useMemo(() => {
+    const fecha = new Date(`${hoyIso}T00:00:00Z`);
+    fecha.setUTCDate(fecha.getUTCDate() - 6);
+    return fecha.toISOString().slice(0, 10);
+  }, [hoyIso]);
+  const inicioMes = `${hoyIso.slice(0, 8)}01`;
+  const presetActivo = desde === hoyIso && hasta === hoyIso
+    ? "hoy"
+    : desde === inicioSemana && hasta === hoyIso
+      ? "semana"
+      : desde === inicioMes && hasta === hoyIso
+        ? "mes"
+        : null;
+  const estiloPreset = tipo => presetActivo === tipo
+    ? { background: c.accentSoft, color: c.accent }
+    : { background: c.surfaceAlt, color: c.textMuted };
   const aplicarPreset = tipo => {
-    const hoyIso = fechaIsoBuenosAires();
-    const hoyFecha = new Date(`${hoyIso}T00:00:00Z`);
     if (tipo === "hoy") { setDesde(hoyIso); setHasta(hoyIso); return; }
-    if (tipo === "semana") { const inicio = new Date(hoyFecha); inicio.setUTCDate(inicio.getUTCDate() - 6); setDesde(inicio.toISOString().slice(0, 10)); setHasta(hoyIso); return; }
-    const inicioMes = `${hoyIso.slice(0, 8)}01`; setDesde(inicioMes); setHasta(hoyIso);
+    if (tipo === "semana") { setDesde(inicioSemana); setHasta(hoyIso); return; }
+    setDesde(inicioMes); setHasta(hoyIso);
   };
 
   return <div className="space-y-4">
-    <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div className="flex flex-wrap items-start justify-between gap-3 mb-3"><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Rendición por período</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Elegí día, semana, mes o cualquier rango y descargalo en PDF.</p></div><button onClick={async () => { const { descargarReporteCaja } = await import("./utils/reporteCajaPdf"); descargarReporteCaja({ desde, hasta, cajas }); }} disabled={cargando || !cajas.length} className="f-body inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}><Download size={14} /> Descargar PDF</button></div><div className="flex flex-wrap gap-2 items-center"><button onClick={() => aplicarPreset("hoy")} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: c.accentSoft, color: c.accent }}>Hoy</button><button onClick={() => aplicarPreset("semana")} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: c.surfaceAlt, color: c.textMuted }}>Últimos 7 días</button><button onClick={() => aplicarPreset("mes")} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: c.surfaceAlt, color: c.textMuted }}>Este mes</button><span className="f-body text-[11px] ml-1" style={{ color: c.textFaint }}>Desde</span><Input type="date" value={desde} max={hasta} onChange={e => setDesde(e.target.value)} className="max-w-[165px]" /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>hasta</span><Input type="date" value={hasta} min={desde} max={fechaIsoBuenosAires()} onChange={e => setHasta(e.target.value)} className="max-w-[165px]" /></div></div>
+    <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div className="flex flex-wrap items-start justify-between gap-3 mb-3"><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Rendición por período</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Elegí día, semana, mes o cualquier rango y descargalo en PDF.</p></div><button onClick={async () => { const { descargarReporteCaja } = await import("./utils/reporteCajaPdf"); descargarReporteCaja({ desde, hasta, cajas }); }} disabled={cargando || !cajas.length} className="f-body inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}><Download size={14} /> Descargar PDF</button></div><div className="flex flex-wrap gap-2 items-center"><button onClick={() => aplicarPreset("hoy")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("hoy")}>Hoy</button><button onClick={() => aplicarPreset("semana")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("semana")}>Últimos 7 días</button><button onClick={() => aplicarPreset("mes")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("mes")}>Este mes</button><span className="f-body text-[11px] ml-1" style={{ color: c.textFaint }}>Desde</span><Input type="date" value={desde} max={hasta} onChange={e => setDesde(e.target.value)} className="max-w-[165px]" /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>hasta</span><Input type="date" value={hasta} min={desde} max={fechaIsoBuenosAires()} onChange={e => setHasta(e.target.value)} className="max-w-[165px]" /></div></div>
     {cargando ? <Cargando label="Calculando cierres..." /> : <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><ResumenCajaDato label="Efectivo cobrado" valor={moneda(totales.efectivo)} color={c.success} fondo={c.surface} /><ResumenCajaDato label="Transferencias" valor={moneda(totales.transferencias)} color={c.accent} fondo={c.surface} /><ResumenCajaDato label="Extracciones" valor={`− ${moneda(totales.extracciones)}`} color={c.danger} fondo={c.surface} /><ResumenCajaDato label="Efectivo esperado" valor={moneda(totales.rendir)} color={c.text} fondo={c.surface} /></div>
       {!cajas.length && <div className="rounded-2xl p-8 text-center" style={{ background: c.surface, border: `1px solid ${c.border}` }}><p className="f-body text-xs" style={{ color: c.textFaint }}>No hay movimientos de caja en este período.</p></div>}
