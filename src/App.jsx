@@ -6,7 +6,7 @@ import {
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
   Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
-  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet
+  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -1053,11 +1053,21 @@ function ResumenCajaDato({ label, valor, color, fondo }) {
   return <div className="rounded-xl p-3" style={{ background: fondo }}><p className="f-body text-[10px]" style={{ color: c.textFaint }}>{label}</p><p className="f-mono text-base mt-1" style={{ color }}>{valor}</p></div>;
 }
 
+function ResumenCarga({ carga, compacto = false }) {
+  const c = useTheme();
+  if (!carga) return null;
+  return <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+    <div className="flex items-start justify-between gap-3 mb-3"><div><p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Package size={16} color={c.accent} /> Carga para retirar</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>{carga.pedidosProgramados} pedido{carga.pedidosProgramados !== 1 ? "s" : ""} programado{carga.pedidosProgramados !== 1 ? "s" : ""}</p></div>{carga.chofer?.nombre && <span className="f-body text-[11px] px-2 py-1 rounded-full" style={{ background: c.accentSoft, color: c.accent }}>{carga.chofer.nombre}</span>}</div>
+    {carga.programado.length ? <div className={`grid ${compacto ? "sm:grid-cols-2" : "grid-cols-2"} gap-2`}>{carga.programado.map(producto => <div key={producto.nombre} className="rounded-xl p-2.5" style={{ background: c.surfaceAlt }}><p className="f-mono text-lg font-semibold" style={{ color: c.accent }}>{producto.cantidad}</p><p className="f-body text-[11px] leading-tight mt-0.5" style={{ color: c.textMuted }}>{producto.nombre}</p>{carga.pendiente.find(p => p.nombre === producto.nombre)?.cantidad !== producto.cantidad && <p className="f-body text-[10px] mt-1" style={{ color: c.amber }}>Faltan {carga.pendiente.find(p => p.nombre === producto.nombre)?.cantidad || 0}</p>}</div>)}</div> : <p className="f-body text-xs py-3 text-center" style={{ color: c.textFaint }}>No hay mercadería programada para este día.</p>}
+  </div>;
+}
+
 function ChoferPanel({ session, onLogout }) {
   const c = useTheme();
   const [dia, setDia] = useState("hoy");
   const [dias, setDias] = useState(() => crearDias());
   const [pedidos, setPedidos] = useState([]);
+  const [carga, setCarga] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [actualizando, setActualizando] = useState(false);
@@ -1070,7 +1080,10 @@ function ChoferPanel({ session, onLogout }) {
 
   const cargar = useCallback(async (mostrarSpinner) => {
     if (mostrarSpinner) setCargando(true);
-    try { setPedidos(await api(`/chofer/pedidos?dia=${dia}`, { token: session.token })); setError(""); }
+    try {
+      const [pedidosDia, cargaDia] = await Promise.all([api(`/chofer/pedidos?dia=${dia}`, { token: session.token }), api(`/chofer/carga?dia=${dia}`, { token: session.token })]);
+      setPedidos(pedidosDia); setCarga(cargaDia); setError("");
+    }
     catch (e) { setError("No pudimos cargar tu ruta."); }
     if (mostrarSpinner) setCargando(false);
   }, [dia, session.token]);
@@ -1177,6 +1190,8 @@ function ChoferPanel({ session, onLogout }) {
             <button key={k} onClick={() => { setDia(k); cerrarCobro(); }} className="f-body flex-1 py-2 rounded-lg text-xs" style={{ background: dia === k ? c.accentSoft : "transparent", color: dia === k ? c.accent : c.textMuted, fontWeight: dia === k ? 600 : 400 }}>{v.label}<span className="block text-[10px] opacity-70">{v.fecha}</span></button>
           ))}
         </div>
+
+        <div className="mb-4"><ResumenCarga carga={carga} /></div>
 
         {dia === "ayer" && pedidos.some(o => o.estado === "pendiente") && (
           <p className="f-body text-[11px] mb-3 px-3 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.amber }}>Los pendientes de ayer todavía se pueden completar.</p>
@@ -1469,6 +1484,13 @@ function AdminPedidos({ token, camiones }) {
   const [guardandoDetalle, setGuardandoDetalle] = useState(false);
   const [okDetalle, setOkDetalle] = useState("");
   const [nuevoPedidoAbierto, setNuevoPedidoAbierto] = useState(false);
+  const [catalogo, setCatalogo] = useState([]);
+  const [itemsEdit, setItemsEdit] = useState([]);
+  const [notasEdit, setNotasEdit] = useState("");
+  const [cargasPedidos, setCargasPedidos] = useState([]);
+  const fechaCarga = desde && hasta && desde === hasta
+    ? desde
+    : (!desde && !hasta && ["ayer", "hoy", "manana"].includes(fDia) ? fDia : null);
 
   const cerrarComprobante = useCallback(() => {
     setComprobanteUrl(actual => { if (actual) URL.revokeObjectURL(actual); return ""; });
@@ -1497,13 +1519,19 @@ function AdminPedidos({ token, camiones }) {
       if (fCamion !== "todos") params.set("camionId", fCamion);
       if (fEstado !== "todos") params.set("estado", fEstado);
       if (q) params.set("q", q);
-      setGrupos(await api(`/admin/pedidos?${params.toString()}`, { token }));
+      const [gruposNuevos, cargasNuevas] = await Promise.all([
+        api(`/admin/pedidos?${params.toString()}`, { token }),
+        fechaCarga ? api(`/admin/cargas?fecha=${fechaCarga}`, { token }) : Promise.resolve({ cargas: [] }),
+      ]);
+      setGrupos(gruposNuevos);
+      setCargasPedidos(cargasNuevas.cargas || []);
       setError("");
     } catch (e) { setError("No pudimos cargar los pedidos."); }
     if (mostrarSpinner) setCargando(false);
-  }, [token, fDia, fCamion, fEstado, q, desde, hasta]);
+  }, [token, fDia, fCamion, fEstado, q, desde, hasta, fechaCarga]);
 
   useEffect(() => { cargar(true); }, [cargar]);
+  useEffect(() => { api("/admin/productos", { token }).then(setCatalogo).catch(() => {}); }, [token]);
   useEffect(() => { const t = setInterval(() => cargar(false), 10000); return () => clearInterval(t); }, [cargar]);
 
   const cerrarDetalle = useCallback(() => {
@@ -1529,6 +1557,8 @@ function AdminPedidos({ token, camiones }) {
       setDetalle(data);
       setFechaManual(String(data.fechaEntrega || "").slice(0, 10));
       setNotaAdmin(data.notaAdmin || "");
+      setNotasEdit(data.notas || "");
+      setItemsEdit(data.items.filter(item => item.productoId).map(item => ({ productoId: item.productoId, cantidad: item.cantidad })));
     } catch (e) {
       cerrarDetalle();
     } finally { setCargandoDetalle(false); }
@@ -1557,6 +1587,28 @@ function AdminPedidos({ token, camiones }) {
   const reasignar = async (id, newCamionId) => {
     try { await api(`/admin/pedidos/${id}/camion`, { method: "PATCH", token, body: { camionId: Number(newCamionId) } }); cargar(false); }
     catch (e) { setError("No se pudo reasignar el pedido."); }
+  };
+
+  const cambiarCantidadAdmin = (productoId, delta) => {
+    setItemsEdit(actual => {
+      const existente = actual.find(item => item.productoId === productoId);
+      const cantidad = Math.max(0, Math.min(999, (existente?.cantidad || 0) + delta));
+      if (!cantidad) return actual.filter(item => item.productoId !== productoId);
+      return existente ? actual.map(item => item.productoId === productoId ? { ...item, cantidad } : item) : [...actual, { productoId, cantidad }];
+    });
+    setOkDetalle("");
+  };
+
+  const guardarProductosPedido = async () => {
+    if (!detalle || !itemsEdit.length) return mostrarErrorGlobal("El pedido debe conservar al menos un producto.");
+    setGuardandoDetalle(true); setOkDetalle("");
+    try {
+      const actualizado = await api(`/admin/pedidos/${detalle.id}`, { method: "PATCH", token, body: { items: itemsEdit, notas: notasEdit, notaAdmin } });
+      setDetalle(actualizado);
+      setItemsEdit(actualizado.items.filter(item => item.productoId).map(item => ({ productoId: item.productoId, cantidad: item.cantidad })));
+      setOkDetalle("Pedido actualizado. El chofer ya recibió las nuevas cantidades.");
+      await cargar(false);
+    } finally { setGuardandoDetalle(false); }
   };
 
   return (
@@ -1598,6 +1650,8 @@ function AdminPedidos({ token, camiones }) {
                       ))}
                     </div>
                     <div className="flex justify-between pt-3"><span className="f-body text-sm font-semibold" style={{ color: c.text }}>Total</span><span className="f-mono text-base font-semibold" style={{ color: c.accent }}>${Number(detalle.total || 0).toLocaleString("es-AR")}</span></div>
+                    {detalle.estado !== "entregado" && detalle.items.every(item => item.productoId) && <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${c.borderSoft}` }}><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Modificar productos</p><div className="space-y-2">{catalogo.filter(producto => producto.categoria === detalle.segmento && (producto.activo || itemsEdit.some(item => item.productoId === producto.id))).map(producto => { const cantidad = itemsEdit.find(item => item.productoId === producto.id)?.cantidad || 0; return <div key={producto.id} className="flex items-center gap-2 rounded-xl p-2" style={{ background: c.surfaceAlt }}><span className="f-body text-xs flex-1" style={{ color: c.text }}>{producto.nombre}</span><button onClick={() => cambiarCantidadAdmin(producto.id, -1)} disabled={!cantidad} className="w-7 h-7 rounded-lg disabled:opacity-30" style={{ background: c.surface }}><Minus size={13} className="mx-auto" color={c.textMuted} /></button><span className="f-mono w-7 text-center text-xs" style={{ color: c.text }}>{cantidad}</span><button onClick={() => cambiarCantidadAdmin(producto.id, 1)} className="w-7 h-7 rounded-lg" style={{ background: c.accentSoft }}><Plus size={13} className="mx-auto" color={c.accent} /></button></div>; })}</div><label className="f-body block text-[11px] mt-3 mb-1.5" style={{ color: c.textMuted }}>Nota del cliente / WhatsApp</label><textarea value={notasEdit} maxLength={500} onChange={e => setNotasEdit(e.target.value)} rows={2} className="f-body w-full px-3 py-2 rounded-xl text-xs outline-none resize-y" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} /><button onClick={guardarProductosPedido} disabled={guardandoDetalle || !itemsEdit.length} className="f-body mt-3 w-full py-2.5 rounded-xl text-xs font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-50" style={{ background: c.accent, color: c.bgAlt }}>{guardandoDetalle ? <Spinner size={13} /> : <Save size={13} />} Guardar cambios del pedido</button></div>}
+                    {detalle.estado !== "entregado" && detalle.items.some(item => !item.productoId) && <p className="f-body mt-4 pt-4 text-xs" style={{ borderTop: `1px solid ${c.borderSoft}`, color: c.amber }}>Este pedido conserva un producto histórico eliminado del catálogo. Para proteger sus datos originales, no se puede modificar su composición.</p>}
                   </div>
 
                   <div className="rounded-2xl p-4 md:p-5 space-y-4" style={{ border: `1px solid ${c.border}` }}>
@@ -1642,6 +1696,13 @@ function AdminPedidos({ token, camiones }) {
         <span className="f-body text-[11px]" style={{ color: c.textFaint }}>O por rango de fechas (anula el filtro de día):</span>
         <RangoFechas desde={desde} hasta={hasta} setDesde={setDesde} setHasta={setHasta} />
       </div>
+
+      {fechaCarga && <section className="rounded-2xl p-4" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}` }}>
+        <div className="mb-3"><p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Boxes size={16} color={c.accent} /> Carga total del reparto</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Mercadería que debe retirar cada chofer para cumplir todos los pedidos programados de este día.</p></div>
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {cargasPedidos.filter(carga => fCamion === "todos" || String(carga.camion.id) === String(fCamion)).map(carga => <div key={carga.camion.id}><div className="mb-2"><CamionChip camion={carga.camion} /></div><ResumenCarga carga={carga} compacto /></div>)}
+        </div>
+      </section>}
 
       <ErrorBanner mensaje={error} />
       {cargando ? <Cargando /> : (
@@ -2408,15 +2469,16 @@ function AdminConfiguracion({ token, onNombreActualizado }) {
 
 function AdminCajas({ token }) {
   const c = useTheme();
-  const [fecha, setFecha] = useState(() => fechaIsoBuenosAires());
+  const [desde, setDesde] = useState(() => fechaIsoBuenosAires());
+  const [hasta, setHasta] = useState(() => fechaIsoBuenosAires());
   const [cajas, setCajas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const moneda = valor => `$${Number(valor || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`;
   const cargar = useCallback(async (spinner = true) => {
     if (spinner) setCargando(true);
-    try { setCajas((await api(`/admin/cajas?fecha=${fecha}`, { token })).cajas || []); }
+    try { setCajas((await api(`/admin/cajas?desde=${desde}&hasta=${hasta}`, { token })).cajas || []); }
     finally { if (spinner) setCargando(false); }
-  }, [fecha, token]);
+  }, [desde, hasta, token]);
   useEffect(() => { cargar(); }, [cargar]);
   useEffect(() => { const timer = setInterval(() => cargar(false), 15000); return () => clearInterval(timer); }, [cargar]);
 
@@ -2430,13 +2492,21 @@ function AdminCajas({ token }) {
     efectivo: a.efectivo + Number(caja.efectivoCobrado || 0), transferencias: a.transferencias + Number(caja.transferenciasCobradas || 0),
     extracciones: a.extracciones + Number(caja.extraccionesTotal || 0), rendir: a.rendir + Number(caja.efectivoEsperado || 0),
   }), { efectivo: 0, transferencias: 0, extracciones: 0, rendir: 0 });
+  const aplicarPreset = tipo => {
+    const hoyIso = fechaIsoBuenosAires();
+    const hoyFecha = new Date(`${hoyIso}T00:00:00Z`);
+    if (tipo === "hoy") { setDesde(hoyIso); setHasta(hoyIso); return; }
+    if (tipo === "semana") { const inicio = new Date(hoyFecha); inicio.setUTCDate(inicio.getUTCDate() - 6); setDesde(inicio.toISOString().slice(0, 10)); setHasta(hoyIso); return; }
+    const inicioMes = `${hoyIso.slice(0, 8)}01`; setDesde(inicioMes); setHasta(hoyIso);
+  };
 
   return <div className="space-y-4">
-    <div className="rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Rendición diaria por camión</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Ventas, unidades entregadas, extracciones y efectivo final.</p></div><Input type="date" value={fecha} max={fechaIsoBuenosAires()} onChange={e => setFecha(e.target.value)} className="max-w-[180px]" /></div>
+    <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div className="flex flex-wrap items-start justify-between gap-3 mb-3"><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Rendición por período</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Elegí día, semana, mes o cualquier rango y descargalo en PDF.</p></div><button onClick={async () => { const { descargarReporteCaja } = await import("./utils/reporteCajaPdf"); descargarReporteCaja({ desde, hasta, cajas }); }} disabled={cargando || !cajas.length} className="f-body inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}><Download size={14} /> Descargar PDF</button></div><div className="flex flex-wrap gap-2 items-center"><button onClick={() => aplicarPreset("hoy")} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: c.accentSoft, color: c.accent }}>Hoy</button><button onClick={() => aplicarPreset("semana")} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: c.surfaceAlt, color: c.textMuted }}>Últimos 7 días</button><button onClick={() => aplicarPreset("mes")} className="f-body px-3 py-2 rounded-xl text-xs" style={{ background: c.surfaceAlt, color: c.textMuted }}>Este mes</button><span className="f-body text-[11px] ml-1" style={{ color: c.textFaint }}>Desde</span><Input type="date" value={desde} max={hasta} onChange={e => setDesde(e.target.value)} className="max-w-[165px]" /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>hasta</span><Input type="date" value={hasta} min={desde} max={fechaIsoBuenosAires()} onChange={e => setHasta(e.target.value)} className="max-w-[165px]" /></div></div>
     {cargando ? <Cargando label="Calculando cierres..." /> : <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><ResumenCajaDato label="Efectivo cobrado" valor={moneda(totales.efectivo)} color={c.success} fondo={c.surface} /><ResumenCajaDato label="Transferencias" valor={moneda(totales.transferencias)} color={c.accent} fondo={c.surface} /><ResumenCajaDato label="Extracciones" valor={`− ${moneda(totales.extracciones)}`} color={c.danger} fondo={c.surface} /><ResumenCajaDato label="Efectivo esperado" valor={moneda(totales.rendir)} color={c.text} fondo={c.surface} /></div>
-      <div className="grid lg:grid-cols-2 gap-4">{cajas.map(caja => <article key={caja.camion.id} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-        <div className="flex items-start justify-between gap-3 mb-4"><div><CamionChip camion={caja.camion} /><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{caja.choferNombre || "Sin chofer"} · {caja.pedidosEntregados} entregas</p></div><span className="f-body text-[11px] px-2.5 py-1 rounded-full" style={{ background: caja.cerrado ? c.successSoft : c.amberSoft, color: caja.cerrado ? c.success : c.amber }}>{caja.cerrado ? "Cerrada" : "Pendiente de cierre"}</span></div>
+      {!cajas.length && <div className="rounded-2xl p-8 text-center" style={{ background: c.surface, border: `1px solid ${c.border}` }}><p className="f-body text-xs" style={{ color: c.textFaint }}>No hay movimientos de caja en este período.</p></div>}
+      <div className="grid lg:grid-cols-2 gap-4">{cajas.map(caja => <article key={`${caja.fecha}-${caja.camion.id}`} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <div className="flex items-start justify-between gap-3 mb-4"><div><CamionChip camion={caja.camion} /><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{formatearFechaEntrega(caja.fecha)} · {caja.choferNombre || "Sin chofer"} · {caja.pedidosEntregados} entregas</p></div><span className="f-body text-[11px] px-2.5 py-1 rounded-full" style={{ background: caja.cerrado ? c.successSoft : c.amberSoft, color: caja.cerrado ? c.success : c.amber }}>{caja.cerrado ? "Cerrada" : "Pendiente de cierre"}</span></div>
         <div className="grid grid-cols-2 gap-2 mb-4"><ResumenCajaDato label="Ventas" valor={moneda(caja.ventasTotal)} color={c.text} fondo={c.surfaceAlt} /><ResumenCajaDato label="Efectivo" valor={moneda(caja.efectivoCobrado)} color={c.success} fondo={c.successSoft} /><ResumenCajaDato label="Transferencias" valor={moneda(caja.transferenciasCobradas)} color={c.accent} fondo={c.accentSoft} /><ResumenCajaDato label="Sin cobrar" valor={moneda(caja.pendienteCobro)} color={caja.pendienteCobro ? c.amber : c.textMuted} fondo={caja.pendienteCobro ? c.amberSoft : c.surfaceAlt} /></div>
         <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Unidades vendidas</p>{caja.productos.length ? <div className="space-y-1">{caja.productos.map(producto => <div key={producto.nombre} className="flex justify-between text-[11px]"><span className="f-body" style={{ color: c.textMuted }}>{producto.nombre}</span><span className="f-mono" style={{ color: c.text }}>{producto.cantidad}</span></div>)}</div> : <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Sin entregas.</p>}</div>
         {!!caja.extracciones.length && <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Extracciones</p>{caja.extracciones.map(item => <div key={item.id} className="flex justify-between gap-3 text-[11px] py-1"><span className="f-body" style={{ color: c.textMuted }}>{item.concepto} · {item.responsable}</span><span className="f-mono shrink-0" style={{ color: c.danger }}>− {moneda(item.monto)}</span></div>)}</div>}
