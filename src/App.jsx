@@ -922,21 +922,58 @@ function CantidadesEntregadasEditor({ pedido, token, habilitado, onGuardado }) {
   const c = useTheme();
   const [editando, setEditando] = useState(false);
   const [cantidades, setCantidades] = useState({});
+  const [catalogo, setCatalogo] = useState([]);
+  const [productoParaAgregar, setProductoParaAgregar] = useState("");
+  const [cargandoCatalogo, setCargandoCatalogo] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const firmaItems = (pedido.items || []).map(item => `${item.id}:${item.cantidad}`).join("|");
+  const claveItem = item => item.productoId ? `producto-${item.productoId}` : `item-${item.id}`;
+  const firmaItems = (pedido.items || []).map(item => `${claveItem(item)}:${item.cantidad}`).join("|");
 
   useEffect(() => {
-    setCantidades(Object.fromEntries((pedido.items || []).map(item => [item.id, item.cantidad])));
+    setCantidades(Object.fromEntries((pedido.items || []).map(item => [claveItem(item), item.cantidad])));
     setEditando(false);
+    setProductoParaAgregar("");
   }, [pedido.id, firmaItems]);
 
   if (!(pedido.items || []).length) return null;
-  const cambiar = (id, delta) => setCantidades(actual => ({ ...actual, [id]: Math.max(0, Math.min(999, Number(actual[id] || 0) + delta)) }));
-  const cambioPendiente = pedido.items.some(item => Number(cantidades[item.id]) !== Number(item.cantidad));
+  const productosActuales = pedido.items.map(item => ({
+    clave: claveItem(item),
+    itemId: item.id,
+    productoId: item.productoId,
+    nombre: item.nombre,
+    precio: item.precioUnitario,
+  }));
+  const clavesActuales = new Set(productosActuales.map(item => item.clave));
+  const productosAgregados = catalogo
+    .filter(producto => cantidades[`producto-${producto.id}`] !== undefined && !clavesActuales.has(`producto-${producto.id}`))
+    .map(producto => ({ clave: `producto-${producto.id}`, productoId: producto.id, nombre: producto.nombre, precio: producto.precio }));
+  const filas = [...productosActuales, ...productosAgregados];
+  const firmaOriginal = productosActuales.map(item => `${item.clave}:${Number(pedido.items.find(actual => claveItem(actual) === item.clave)?.cantidad || 0)}`).sort().join("|");
+  const firmaNueva = filas.filter(item => Number(cantidades[item.clave] || 0) > 0).map(item => `${item.clave}:${Number(cantidades[item.clave])}`).sort().join("|");
+  const cambioPendiente = firmaNueva !== firmaOriginal;
+  const opcionesParaAgregar = catalogo.filter(producto => cantidades[`producto-${producto.id}`] === undefined);
+  const cambiar = (clave, delta) => setCantidades(actual => ({ ...actual, [clave]: Math.max(0, Math.min(999, Number(actual[clave] || 0) + delta)) }));
+
+  const abrirEditor = async () => {
+    setEditando(true);
+    if (catalogo.length) return;
+    setCargandoCatalogo(true);
+    try { setCatalogo(await api("/public/productos")); }
+    finally { setCargandoCatalogo(false); }
+  };
+
+  const agregarProducto = () => {
+    const productoId = Number(productoParaAgregar);
+    if (!productoId) return;
+    setCantidades(actual => ({ ...actual, [`producto-${productoId}`]: 1 }));
+    setProductoParaAgregar("");
+  };
 
   const guardar = async () => {
-    const items = pedido.items.map(item => ({ id: item.id, cantidad: Number(cantidades[item.id] || 0) }));
-    if (!items.some(item => item.cantidad > 0)) return mostrarErrorGlobal("El pedido debe conservar al menos un producto.");
+    const items = filas
+      .filter(item => Number(cantidades[item.clave] || 0) > 0)
+      .map(item => ({ ...(item.productoId ? { productoId: item.productoId } : { itemId: item.itemId }), cantidad: Number(cantidades[item.clave]) }));
+    if (!items.length) return mostrarErrorGlobal("El pedido debe conservar al menos un producto.");
     setGuardando(true);
     try {
       const actualizado = await api(`/chofer/pedidos/${pedido.id}/items`, { method: "PATCH", token, body: { items } });
@@ -948,22 +985,29 @@ function CantidadesEntregadasEditor({ pedido, token, habilitado, onGuardado }) {
   return (
     <div className="rounded-xl p-2.5 mb-3" style={{ background: c.accentSoft, border: `1px solid ${c.borderSoft}` }}>
       <div className="flex items-center justify-between gap-2">
-        <div><p className="f-body text-[11px] font-medium" style={{ color: c.text }}>Cantidad realmente entregada</p><p className="f-body text-[10px] mt-0.5" style={{ color: c.textFaint }}>Corregila si dejaste más o menos que lo pedido.</p></div>
-        {habilitado && !editando && <button onClick={() => setEditando(true)} className="f-body inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium" style={{ background: c.surface, color: c.accent }}><Pencil size={11} /> Modificar</button>}
+        <div><p className="f-body text-[11px] font-medium" style={{ color: c.text }}>Productos realmente entregados</p><p className="f-body text-[10px] mt-0.5" style={{ color: c.textFaint }}>Podés cambiar cantidades, quitar o agregar productos.</p></div>
+        {habilitado && !editando && <button onClick={abrirEditor} className="f-body inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium" style={{ background: c.surface, color: c.accent }}><Pencil size={11} /> Modificar</button>}
       </div>
       {editando && (
         <div className="space-y-2 mt-2.5">
-          {pedido.items.map(item => (
-            <div key={item.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2" style={{ background: c.surface }}>
+          {filas.map(item => (
+            <div key={item.clave} className="flex items-center gap-2 rounded-lg px-2.5 py-2" style={{ background: c.surface, opacity: Number(cantidades[item.clave] || 0) === 0 ? 0.55 : 1 }}>
               <span className="f-body text-xs flex-1" style={{ color: c.text }}>{item.nombre}</span>
-              <button onClick={() => cambiar(item.id, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={12} color={c.textMuted} /></button>
-              <input type="number" min="0" max="999" value={cantidades[item.id] ?? 0} onChange={e => setCantidades(actual => ({ ...actual, [item.id]: Math.max(0, Math.min(999, Number(e.target.value) || 0)) }))} className="f-mono w-14 text-center text-xs px-1 py-1.5 rounded-lg outline-none" style={{ background: c.bgAlt, border: `1px solid ${c.border}`, color: c.text }} />
-              <button onClick={() => cambiar(item.id, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.accentSoft }}><Plus size={12} color={c.accent} /></button>
+              <button onClick={() => cambiar(item.clave, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={12} color={c.textMuted} /></button>
+              <input type="number" min="0" max="999" value={cantidades[item.clave] ?? 0} onChange={e => setCantidades(actual => ({ ...actual, [item.clave]: Math.max(0, Math.min(999, Number(e.target.value) || 0)) }))} className="f-mono w-14 text-center text-xs px-1 py-1.5 rounded-lg outline-none" style={{ background: c.bgAlt, border: `1px solid ${c.border}`, color: c.text }} />
+              <button onClick={() => cambiar(item.clave, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.accentSoft }}><Plus size={12} color={c.accent} /></button>
             </div>
           ))}
+          <div className="flex gap-2 rounded-lg p-2" style={{ background: c.surface }}>
+            <select value={productoParaAgregar} onChange={e => setProductoParaAgregar(e.target.value)} disabled={cargandoCatalogo || !opcionesParaAgregar.length} className="f-body flex-1 min-w-0 px-2.5 py-2 rounded-lg text-[11px] outline-none disabled:opacity-60" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }}>
+              <option value="">{cargandoCatalogo ? "Cargando productos..." : opcionesParaAgregar.length ? "Elegí un producto para agregar" : "Todos los productos ya están incluidos"}</option>
+              {opcionesParaAgregar.map(producto => <option key={producto.id} value={producto.id}>{producto.nombre}</option>)}
+            </select>
+            <button onClick={agregarProducto} disabled={!productoParaAgregar} className="f-body inline-flex items-center gap-1 px-3 py-2 rounded-lg text-[11px] font-medium disabled:opacity-40 shrink-0" style={{ background: c.accentSoft, color: c.accent }}><Plus size={12} /> Agregar</button>
+          </div>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setCantidades(Object.fromEntries(pedido.items.map(item => [item.id, item.cantidad]))); setEditando(false); }} disabled={guardando} className="f-body px-2.5 py-1.5 text-[11px]" style={{ color: c.textFaint }}>Cancelar</button>
-            <button onClick={guardar} disabled={guardando || !cambioPendiente} className="f-body inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={11} /> : <Save size={11} />} Guardar cantidades</button>
+            <button onClick={() => { setCantidades(Object.fromEntries(pedido.items.map(item => [claveItem(item), item.cantidad]))); setProductoParaAgregar(""); setEditando(false); }} disabled={guardando} className="f-body px-2.5 py-1.5 text-[11px]" style={{ color: c.textFaint }}>Cancelar</button>
+            <button onClick={guardar} disabled={guardando || !cambioPendiente} className="f-body inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={11} /> : <Save size={11} />} Guardar productos</button>
           </div>
         </div>
       )}
