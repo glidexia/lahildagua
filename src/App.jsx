@@ -527,8 +527,58 @@ function WhatsAppFlotante() {
   );
 }
 
+const PASOS_CLIENTE = ["Tipo de pedido", "Productos", "Datos y entrega", "Confirmación"];
+
+function ProgresoPedido({ step, color }) {
+  const c = useTheme();
+  return (
+    <div className="mt-7 mb-8">
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <span className="f-body text-xs font-medium" style={{ color: c.text }}>Paso {step + 1} de 4</span>
+        <span className="f-body text-xs" style={{ color: c.textFaint }}>{PASOS_CLIENTE[step]}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {[0, 1, 2, 3].map(numero => (
+          <div key={numero} className="h-1.5 rounded-full transition-colors" style={{ background: step >= numero ? color : c.border }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VisualCategoria({ productos, Icon, color }) {
+  const c = useTheme();
+  const fotos = (productos || []).filter(producto => producto.imagenUrl).slice(0, 3);
+  if (!fotos.length) return (
+    <div className="w-28 h-24 shrink-0 rounded-2xl flex items-center justify-center" style={{ background: `${color}10` }}>
+      <Icon size={42} color={color} strokeWidth={1.5} />
+    </div>
+  );
+  return (
+    <div className="relative w-28 h-24 shrink-0" aria-hidden="true">
+      {fotos.map((producto, indice) => {
+        const posiciones = fotos.length === 1
+          ? [{ left: 10, top: 0, width: 88, height: 92 }]
+          : [{ left: 24, top: 0, width: 72, height: 92 }, { left: 0, top: 30, width: 55, height: 62 }, { left: 72, top: 38, width: 48, height: 54 }];
+        return <img key={producto.id} src={producto.imagenUrl} alt="" loading="lazy" className="absolute object-contain drop-shadow-sm" style={posiciones[indice]} />;
+      })}
+      <div className="absolute inset-x-2 bottom-0 h-3 rounded-full blur-md opacity-30" style={{ background: c.textFaint }} />
+    </div>
+  );
+}
+
+function AyudaCliente() {
+  const c = useTheme();
+  return (
+    <a href="https://wa.me/3515937318" target="_blank" rel="noopener noreferrer" className="f-body mx-auto mt-8 mb-3 flex w-fit items-center gap-3 rounded-full px-4 py-2.5 text-xs no-underline shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }}>
+      <span className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "#25D366" }}><MessageCircle size={17} color="#fff" fill="#fff" /></span>
+      <span>¿Necesitás ayuda?</span>
+    </a>
+  );
+}
+
 /* ---------------------------------- VIDRIERA (CLIENTE) ---------------------------------- */
-function ClientePortal({ onAccesoInterno }) {
+function ClientePortal({ onAccesoInterno, modo, setModo }) {
   const c = useTheme();
   const [productos, setProductos] = useState([]);
   const [zonas, setZonas] = useState([]);
@@ -574,6 +624,10 @@ function ClientePortal({ onAccesoInterno }) {
       .finally(() => { if (vigente) setCargandoDisponibilidad(false); });
     return () => { vigente = false; };
   }, [form.barrio]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, [step, confirmado]);
 
   const productosDelSegmento = productos.filter(p => !segmento || p.categoria === segmento.categoria);
   const totalItems = Object.values(cant).reduce((a, b) => a + b, 0);
@@ -643,205 +697,150 @@ function ClientePortal({ onAccesoInterno }) {
 
   if (cargando) return <div className="flex-1 flex items-center justify-center" style={{ background: c.bg }}><Cargando label="Cargando la tienda..." /></div>;
 
+  const azulCliente = modo === "dark" ? "#38BDF8" : "#087FC3";
+  const azulSuave = modo === "dark" ? "rgba(56,189,248,.12)" : "#EAF6FD";
+  const volverAEmpezar = () => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setVariantesElegidas({}); setProductosAbiertos({}); setDisponibilidad([]); setComprobante(null); setForm(formularioInicialCliente()); };
+  const botonPrincipal = { background: azulCliente, color: "#FFFFFF", boxShadow: `0 10px 24px ${azulCliente}24` };
+
   return (
     <div className="flex-1 flex flex-col" style={{ background: c.bg }}>
-      <div className="sticky top-0 z-10" style={{ background: `${c.bg}E6`, borderBottom: `1px solid ${c.borderSoft}`, backdropFilter: "blur(6px)" }}>
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center">
-          <BrandLogo variant="word" className="h-8 w-auto max-w-[150px]" />
+      <header className="sticky top-0 z-20" style={{ background: `${c.bg}F2`, borderBottom: `1px solid ${c.borderSoft}`, backdropFilter: "blur(10px)" }}>
+        <div className="max-w-xl mx-auto px-5 py-3 flex items-center justify-between gap-4">
+          <BrandLogo variant="full" className="h-16 sm:h-[72px] w-auto max-w-[150px] object-contain" />
+          <button onClick={() => setModo(modo === "dark" ? "light" : "dark")} className="w-11 h-11 rounded-full flex items-center justify-center shadow-sm shrink-0" style={{ background: c.surface, border: `1px solid ${c.border}` }} aria-label={modo === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
+            {modo === "dark" ? <Sun size={18} color={c.amber} /> : <Moon size={18} color={azulCliente} />}
+          </button>
         </div>
-      </div>
+      </header>
 
       <div className="flex-1">
         {confirmado ? (
-          <div className="max-w-md mx-auto text-center py-10 px-4">
-            <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-5" style={{ background: c.successSoft }}><CheckCircle2 size={30} color={c.success} /></div>
-            <h2 className="f-display text-2xl font-semibold mb-2" style={{ color: c.text }}>¡Pedido confirmado!</h2>
-            <p className="f-body text-sm mb-6" style={{ color: c.textMuted }}>Te llega con {confirmado.camion}. Te avisamos por WhatsApp antes de salir.</p>
-            <div className="rounded-2xl p-5 text-left space-y-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-              <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Cliente</span><span style={{ color: c.text }}>{form.nombre || "—"}</span></div>
-              <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Dirección</span><span style={{ color: c.text }}>{form.calle}, {form.barrio}</span></div>
-              <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Entrega</span><span style={{ color: c.text }}>{formatearFechaEntrega(confirmado.fechaEntrega)}</span></div>
-              <div className="flex justify-between f-body text-sm"><span style={{ color: c.textMuted }}>Franja</span><span style={{ color: c.text }}>{formatearFranja(confirmado.horaDesde, confirmado.horaHasta)}</span></div>
-              <div className="flex justify-between f-body text-sm items-center"><span style={{ color: c.textMuted }}>Camión asignado</span><CamionChip camion={camionAsignado} small /></div>
-              {form.notas && <div className="f-body text-sm"><span className="block mb-1" style={{ color: c.textMuted }}>Notas</span><span style={{ color: c.text }}>{form.notas}</span></div>}
+          <div className="max-w-xl mx-auto px-5 py-10 sm:py-14 text-center">
+            <div className="w-20 h-20 rounded-full mx-auto flex items-center justify-center mb-6" style={{ background: c.successSoft }}><CheckCircle2 size={38} color={c.success} /></div>
+            <p className="f-body text-xs tracking-[.16em] uppercase mb-2" style={{ color: azulCliente }}>Pedido registrado</p>
+            <h1 className="f-display text-3xl sm:text-4xl font-bold mb-3" style={{ color: c.text }}>¡Listo, {form.nombre.split(" ")[0]}!</h1>
+            <p className="f-body text-sm leading-relaxed mb-8 max-w-sm mx-auto" style={{ color: c.textMuted }}>Tu pedido quedó confirmado. Te avisaremos por WhatsApp antes de que salga el reparto.</p>
+            <div className="rounded-[22px] p-5 sm:p-6 text-left space-y-4 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+              <div className="flex items-start gap-3"><MapPin size={19} color={azulCliente} className="mt-0.5 shrink-0" /><div><p className="f-body text-[11px] uppercase tracking-wide" style={{ color: c.textFaint }}>Entrega</p><p className="f-body text-sm font-medium" style={{ color: c.text }}>{form.calle}, {form.barrio}</p></div></div>
+              <div className="flex items-start gap-3"><CalendarClock size={19} color={azulCliente} className="mt-0.5 shrink-0" /><div><p className="f-body text-[11px] uppercase tracking-wide" style={{ color: c.textFaint }}>Día y horario</p><p className="f-body text-sm font-medium" style={{ color: c.text }}>{formatearFechaEntrega(confirmado.fechaEntrega)}</p><p className="f-body text-xs mt-0.5" style={{ color: c.textMuted }}>{formatearFranja(confirmado.horaDesde, confirmado.horaHasta)}</p></div></div>
               <div className="h-px" style={{ background: c.border }} />
-              <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
+              <div className="flex justify-between items-center"><span className="f-display text-base font-semibold" style={{ color: c.text }}>Total</span><span className="f-display text-xl font-bold" style={{ color: azulCliente }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
             </div>
-            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setVariantesElegidas({}); setProductosAbiertos({}); setDisponibilidad([]); setComprobante(null); setForm(formularioInicialCliente()); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
+            <button onClick={volverAEmpezar} className="f-body w-full mt-5 py-3.5 rounded-2xl text-sm font-semibold" style={botonPrincipal}>Hacer otro pedido</button>
+            <AyudaCliente />
           </div>
         ) : (
-          <div className="max-w-md mx-auto px-4 py-6">
-            <div className="mb-6"><p className="f-body text-xs tracking-wide uppercase" style={{ color: c.accent }}>Pedí online</p><h2 className="f-display text-2xl font-semibold" style={{ color: c.text }}>Agua para tu próxima entrega</h2></div>
-            <div className="flex items-center gap-2 mb-6">{[0, 1, 2, 3].map(n => <div key={n} className="flex-1 h-1 rounded-full" style={{ background: step >= n ? c.accent : c.border }} />)}</div>
+          <main className="max-w-xl mx-auto px-5 py-7 sm:py-9">
+            <div>
+              <p className="f-body text-xs font-semibold tracking-[.15em] uppercase mb-1.5" style={{ color: azulCliente }}>Pedidos online</p>
+              <h1 className="f-display text-[32px] sm:text-4xl leading-[1.08] font-bold tracking-[-.025em]" style={{ color: c.text }}>Hacé tu pedido</h1>
+              <p className="f-body text-sm sm:text-base mt-2" style={{ color: c.textMuted }}>Elegí qué necesitás y coordinamos tu entrega.</p>
+            </div>
+            <ProgresoPedido step={step} color={azulCliente} />
             <ErrorBanner mensaje={error} />
 
             {step === 0 && (
-              <div className="space-y-3">
-                <p className="f-body text-sm mb-1" style={{ color: c.text }}>¿Para qué necesitás pedir?</p>
-                <p className="f-body text-xs mb-4" style={{ color: c.textFaint }}>Así te mostramos el catálogo y los precios que corresponden.</p>
-                {OPCIONES_SEGMENTO.map(op => (
-                  <button key={op.id} onClick={() => elegirSegmento(op)} className="f-body w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-colors" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                    <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: c.accentSoft }}><op.Icon size={20} color={c.accent} /></div>
-                    <div className="flex-1"><p className="text-sm font-medium" style={{ color: c.text }}>{op.label}</p><p className="text-xs" style={{ color: c.textFaint }}>{op.desc}</p></div>
-                    <ChevronRight size={16} color={c.textFaint} />
-                  </button>
-                ))}
-              </div>
+              <section>
+                <h2 className="f-display text-2xl font-bold mb-5" style={{ color: c.text }}>¿Qué necesitás?</h2>
+                <div className="space-y-3.5">
+                  {OPCIONES_SEGMENTO.map(op => (
+                    <button key={op.id} onClick={() => elegirSegmento(op)} className="f-body w-full min-h-[122px] flex items-center gap-3 rounded-[20px] px-3 sm:px-4 py-3 text-left transition-transform hover:-translate-y-0.5" style={{ background: c.surface, border: `1px solid ${modo === "dark" ? c.border : "#D7E5EE"}`, boxShadow: modo === "dark" ? "none" : "0 8px 22px rgba(15,23,42,.035)" }}>
+                      <VisualCategoria productos={productos.filter(producto => producto.categoria === op.categoria)} Icon={op.Icon} color={azulCliente} />
+                      <div className="flex-1 min-w-0"><p className="text-base font-semibold leading-tight" style={{ color: c.text }}>{op.label}</p><p className="text-xs sm:text-sm mt-1 leading-snug" style={{ color: c.textMuted }}>{op.desc}</p></div>
+                      <ChevronRight size={23} color={azulCliente} strokeWidth={1.8} className="shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              </section>
             )}
 
             {step === 1 && (
-              <div className="space-y-3">
-                <button onClick={() => setStep(0)} className="f-body flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium mb-2 transition-opacity hover:opacity-80" style={{ color: c.textMuted, background: c.surface, border: `1px solid ${c.border}` }}><ArrowLeft size={15} color={c.accent} /> Volver a elegir categoría <span style={{ color: c.accent }}>· {segmento?.label}</span></button>
-                {productosDelSegmento.map(p => {
-                  const esMayorista = segmento?.categoria === "comercio_reventa" && (p.variantes || []).length > 0;
-                  const elegida = varianteElegida(p);
-                  const cantidadSuelta = elegida ? 0 : (cant[p.id] || 0);
-                  if (esMayorista) return (
-                    <div key={p.id} className="rounded-2xl overflow-hidden" style={{ background: c.surface, border: `1px solid ${elegida || cantidadSuelta ? c.accent : c.border}` }}>
-                      <button onClick={() => setProductosAbiertos(prev => ({ ...prev, [p.id]: !prev[p.id] }))} className="w-full p-4 flex items-center gap-3 text-left">
-                        <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.accentSoft }}>{p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" loading="lazy" /> : <Droplet size={18} color={c.accent} />}</div>
-                        <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{elegida ? `${elegida.nombre} · ${elegida.cantidad} unidades` : cantidadSuelta ? `Compra unidad · ${cantidadSuelta} unidad${cantidadSuelta === 1 ? "" : "es"}` : (p.descripcion || "Ver cantidades y precios mayoristas")}</p>{(elegida || cantidadSuelta > 0) && <p className="f-mono text-xs mt-1" style={{ color: c.accent }}>${(precioUnitarioElegido(p) * (cant[p.id] || 0)).toLocaleString("es-AR")} total</p>}</div>
-                        <ChevronDown size={18} color={c.textMuted} className={`transition-transform ${productosAbiertos[p.id] ? "rotate-180" : ""}`} />
-                      </button>
-                      {productosAbiertos[p.id] && <div className="px-3 pb-3 space-y-2" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-                        <p className="f-body text-[11px] pt-3" style={{ color: c.textMuted }}>Elegí la cantidad que querés comprar</p>
-                        <div className="w-full rounded-xl p-3 flex items-center justify-between gap-3" style={{ background: cantidadSuelta ? c.accentSoft : c.surfaceAlt, border: `1px solid ${cantidadSuelta ? c.accent : c.borderSoft}` }}>
-                          <div><p className="f-body text-xs font-medium" style={{ color: cantidadSuelta ? c.accent : c.text }}>Compra unidad</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>${Number(p.precio).toLocaleString("es-AR")} por unidad</p></div>
-                          <div className="flex items-center gap-2"><button onClick={() => cambiarCantidadSuelta(p, -1)} disabled={!cantidadSuelta} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-35" style={{ background: c.surface }} aria-label={`Quitar una unidad de ${p.nombre}`}><Minus size={13} color={c.textMuted} /></button><span className="f-mono text-sm min-w-6 text-center" style={{ color: c.text }}>{cantidadSuelta}</span><button onClick={() => cambiarCantidadSuelta(p, 1)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: c.surface }} aria-label={`Agregar una unidad de ${p.nombre}`}><Plus size={13} color={c.accent} /></button></div>
-                        </div>
-                        {p.variantes.map(variante => {
-                          const seleccionada = elegida?.id === variante.id;
-                          return <button key={variante.id} onClick={() => elegirVariante(p, variante)} className="w-full rounded-xl p-3 flex items-center justify-between gap-3 text-left" style={{ background: seleccionada ? c.accentSoft : c.surfaceAlt, border: `1px solid ${seleccionada ? c.accent : c.borderSoft}` }}>
-                            <div><p className="f-body text-xs font-medium" style={{ color: seleccionada ? c.accent : c.text }}>{variante.nombre}</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>{variante.cantidad} unidades · ${Number(variante.precioUnitario).toLocaleString("es-AR")} c/u</p></div>
-                            <span className="f-mono text-sm font-semibold whitespace-nowrap" style={{ color: seleccionada ? c.accent : c.text }}>${(Number(variante.precioUnitario) * variante.cantidad).toLocaleString("es-AR")}</span>
-                          </button>;
-                        })}
-                      </div>}
-                    </div>
-                  );
-                  return (
-                    <div key={p.id} className="rounded-2xl p-4 flex items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                      <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.accentSoft }}>{p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" loading="lazy" /> : <Droplet size={18} color={c.accent} />}</div>
-                      <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{p.descripcion}</p><p className="f-mono text-xs mt-0.5" style={{ color: c.accent }}>${Number(p.precio).toLocaleString("es-AR")}</p></div>
-                      <div className="flex items-center gap-2"><button onClick={() => setQty(p.id, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={13} color={c.textMuted} /></button><span className="f-mono text-sm w-4 text-center" style={{ color: c.text }}>{cant[p.id] || 0}</span><button onClick={() => setQty(p.id, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.accentSoft }}><Plus size={13} color={c.accent} /></button></div>
-                    </div>
-                  );
-                })}
-                {productosDelSegmento.length === 0 && <p className="f-body text-xs text-center py-6" style={{ color: c.textFaint }}>Todavía no hay productos cargados para esta categoría.</p>}
-                <button disabled={totalItems === 0} onClick={() => setStep(2)} className="f-body w-full mt-2 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Continuar ({totalItems}) <ChevronRight size={15} /></button>
-              </div>
+              <section>
+                <button onClick={() => setStep(0)} className="f-body flex items-center gap-2 text-xs font-medium mb-4" style={{ color: azulCliente }}><ArrowLeft size={17} /> Volver a elegir categoría</button>
+                <h2 className="f-display text-2xl font-bold" style={{ color: c.text }}>Elegí tus productos</h2>
+                <p className="f-body text-sm mt-1 mb-5" style={{ color: c.textMuted }}>{segmento?.label}</p>
+                <div className="space-y-3.5">
+                  {productosDelSegmento.map(p => {
+                    const esMayorista = segmento?.categoria === "comercio_reventa" && (p.variantes || []).length > 0;
+                    const elegida = varianteElegida(p);
+                    const cantidadSuelta = elegida ? 0 : (cant[p.id] || 0);
+                    if (esMayorista) return (
+                      <article key={p.id} className="rounded-[20px] overflow-hidden shadow-sm" style={{ background: c.surface, border: `1px solid ${elegida || cantidadSuelta ? azulCliente : c.border}` }}>
+                        <button onClick={() => setProductosAbiertos(prev => ({ ...prev, [p.id]: !prev[p.id] }))} className="w-full p-4 flex items-center gap-4 text-left">
+                          <div className="w-20 h-20 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.bgAlt }}>{p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-contain p-1" loading="lazy" /> : <Droplet size={25} color={azulCliente} />}</div>
+                          <div className="flex-1 min-w-0"><p className="f-body text-base font-semibold" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs mt-1 leading-snug" style={{ color: c.textMuted }}>{elegida ? `${elegida.nombre} · ${elegida.cantidad} unidades` : cantidadSuelta ? `Compra unidad · ${cantidadSuelta} unidad${cantidadSuelta === 1 ? "" : "es"}` : (p.descripcion || "Ver cantidades y precios mayoristas")}</p>{(elegida || cantidadSuelta > 0) && <p className="f-mono text-sm font-semibold mt-1.5" style={{ color: azulCliente }}>${(precioUnitarioElegido(p) * (cant[p.id] || 0)).toLocaleString("es-AR")} total</p>}</div>
+                          <ChevronDown size={20} color={azulCliente} className={`shrink-0 transition-transform ${productosAbiertos[p.id] ? "rotate-180" : ""}`} />
+                        </button>
+                        {productosAbiertos[p.id] && <div className="px-4 pb-4 space-y-2.5" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+                          <p className="f-body text-xs pt-4" style={{ color: c.textMuted }}>Elegí la cantidad que querés comprar</p>
+                          <div className="w-full rounded-2xl p-3.5 flex items-center justify-between gap-3" style={{ background: cantidadSuelta ? azulSuave : c.surfaceAlt, border: `1px solid ${cantidadSuelta ? azulCliente : c.borderSoft}` }}>
+                            <div><p className="f-body text-sm font-semibold" style={{ color: cantidadSuelta ? azulCliente : c.text }}>Compra unidad</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>${Number(p.precio).toLocaleString("es-AR")} por unidad</p></div>
+                            <div className="flex items-center gap-2"><button onClick={() => cambiarCantidadSuelta(p, -1)} disabled={!cantidadSuelta} className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-35" style={{ background: c.surface }}><Minus size={14} color={c.textMuted} /></button><span className="f-mono text-sm min-w-6 text-center" style={{ color: c.text }}>{cantidadSuelta}</span><button onClick={() => cambiarCantidadSuelta(p, 1)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: c.surface }}><Plus size={14} color={azulCliente} /></button></div>
+                          </div>
+                          {p.variantes.map(variante => { const seleccionada = elegida?.id === variante.id; return <button key={variante.id} onClick={() => elegirVariante(p, variante)} className="w-full rounded-2xl p-3.5 flex items-center justify-between gap-3 text-left" style={{ background: seleccionada ? azulSuave : c.surfaceAlt, border: `1px solid ${seleccionada ? azulCliente : c.borderSoft}` }}><div><p className="f-body text-sm font-semibold" style={{ color: seleccionada ? azulCliente : c.text }}>{variante.nombre}</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>{variante.cantidad} unidades · ${Number(variante.precioUnitario).toLocaleString("es-AR")} c/u</p></div><span className="f-mono text-sm font-semibold whitespace-nowrap" style={{ color: seleccionada ? azulCliente : c.text }}>${(Number(variante.precioUnitario) * variante.cantidad).toLocaleString("es-AR")}</span></button>; })}
+                        </div>}
+                      </article>
+                    );
+                    return (
+                      <article key={p.id} className="rounded-[20px] p-4 flex items-center gap-4 shadow-sm" style={{ background: c.surface, border: `1px solid ${(cant[p.id] || 0) ? azulCliente : c.border}` }}>
+                        <div className="w-20 h-20 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.bgAlt }}>{p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-contain p-1" loading="lazy" /> : <Droplet size={25} color={azulCliente} />}</div>
+                        <div className="flex-1 min-w-0"><p className="f-body text-base font-semibold" style={{ color: c.text }}>{p.nombre}</p>{p.descripcion && <p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>{p.descripcion}</p>}<p className="f-mono text-sm font-semibold mt-1" style={{ color: azulCliente }}>${Number(p.precio).toLocaleString("es-AR")}</p></div>
+                        <div className="flex items-center gap-2"><button onClick={() => setQty(p.id, -1)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={14} color={c.textMuted} /></button><span className="f-mono text-sm w-5 text-center" style={{ color: c.text }}>{cant[p.id] || 0}</span><button onClick={() => setQty(p.id, 1)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: azulSuave }}><Plus size={14} color={azulCliente} /></button></div>
+                      </article>
+                    );
+                  })}
+                </div>
+                {productosDelSegmento.length === 0 && <p className="f-body text-sm text-center py-10" style={{ color: c.textFaint }}>Todavía no hay productos cargados para esta categoría.</p>}
+                <button disabled={totalItems === 0} onClick={() => setStep(2)} className="f-body w-full mt-5 py-4 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-40" style={botonPrincipal}>Continuar ({totalItems}) <ChevronRight size={17} /></button>
+              </section>
             )}
 
             {step === 2 && (
-              <div className="space-y-3">
-                <Input name="name" autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
-                <Input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
-                <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} />
-                <select name="address-level3" autoComplete="address-level3" value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}>
-                  <option value="">Barrio (define tu zona de reparto)</option>
-                  {zonas.map(z => <option key={z.barrio} value={z.barrio}>{z.barrio}</option>)}
-                </select>
-                {form.barrio && <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}><MapPin size={14} color={c.accent} /><span className="f-body text-xs" style={{ color: c.text }}>Tu zona corresponde a</span><CamionChip camion={camionAsignado} small /></div>}
-                {form.barrio && (
-                  <div className="rounded-2xl p-3.5 space-y-3" style={{ background: c.bgAlt, border: `1px solid ${c.border}` }}>
-                    <div>
-                      <p className="f-body text-xs font-medium" style={{ color: c.text }}>Elegí el día de entrega</p>
-                      <p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Estas son las próximas fechas disponibles para tu zona.</p>
-                    </div>
-                    {cargandoDisponibilidad ? <div className="flex items-center gap-2 py-2"><Spinner size={13} /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>Buscando próximos turnos...</span></div> : disponibilidad.length > 0 ? (
-                      <div className="flex gap-2 overflow-x-auto pb-1">
-                        {disponibilidad.slice(0, 10).map(d => (
-                          <button key={d.fecha} onClick={() => setForm({ ...form, fechaEntrega: d.fecha, horarioZonaId: "" })} className="f-body shrink-0 rounded-xl px-3 py-2 text-left" style={{ background: form.fechaEntrega === d.fecha ? c.accentSoft : c.surface, border: `1px solid ${form.fechaEntrega === d.fecha ? c.accent : c.border}` }}>
-                            <span className="block text-xs font-medium" style={{ color: form.fechaEntrega === d.fecha ? c.accent : c.text }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", weekday: "short", day: "numeric" })}</span>
-                            <span className="block text-[10px] mt-0.5" style={{ color: c.textFaint }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", month: "short" })}</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : <p className="f-body text-[11px] px-3 py-2 rounded-lg" style={{ color: c.amber, background: c.amberSoft }}>No hay turnos disponibles para este barrio. Escribinos para coordinar.</p>}
-                    {fechaElegida && (
-                      <div>
-                        <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Franja horaria aproximada</p>
-                        <div className="flex flex-wrap gap-2">
-                          {fechaElegida.horarios.map(h => (
-                            <button key={h.id} onClick={() => setForm({ ...form, horarioZonaId: h.id })} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: Number(form.horarioZonaId) === h.id ? c.accentSoft : c.surface, border: `1px solid ${Number(form.horarioZonaId) === h.id ? c.accent : c.border}`, color: Number(form.horarioZonaId) === h.id ? c.accent : c.textMuted }}>
-                              {formatearFranja(h.horaDesde, h.horaHasta)}{h.cupoDisponible <= 2 ? ` · ${h.cupoDisponible} cupo${h.cupoDisponible === 1 ? "" : "s"}` : ""}
-                            </button>
-                          ))}
-                        </div>
-                        <p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>La hora es aproximada: el chofer organiza el recorrido dentro de esta franja.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div>
-                  <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Tipo de destino</p>
-                  <div className="f-body w-full px-4 py-3 rounded-xl text-sm flex items-center justify-between" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                    <span style={{ color: c.text }}>{segmento?.label || "—"}</span>
-                    <span className="text-[11px]" style={{ color: c.textFaint }}>Elegido al inicio</span>
-                  </div>
+              <section>
+                <button onClick={() => setStep(1)} className="f-body flex items-center gap-2 text-xs font-medium mb-4" style={{ color: azulCliente }}><ArrowLeft size={17} /> Volver a productos</button>
+                <h2 className="f-display text-2xl font-bold" style={{ color: c.text }}>Datos de entrega</h2>
+                <p className="f-body text-sm mt-1 mb-5" style={{ color: c.textMuted }}>Completá dónde y cuándo querés recibirlo.</p>
+                <div className="rounded-[22px] p-4 sm:p-5 space-y-3.5 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+                  <Input name="name" autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="min-h-[52px]" />
+                  <Input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} className="min-h-[52px]" />
+                  <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} className="min-h-[52px]" />
+                  <select name="address-level3" autoComplete="address-level3" value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full min-h-[52px] px-4 py-3 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}><option value="">Barrio (define tu zona de reparto)</option>{zonas.map(z => <option key={z.barrio} value={z.barrio}>{z.barrio}</option>)}</select>
                 </div>
-                <div><p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Cómo vas a pagar</p><div className="flex gap-2 flex-wrap">{PAGOS.map(p => <button key={p} onClick={() => { setForm({ ...form, pago: p }); if (p !== "Transferencia") setComprobante(null); }} className="f-body px-3 py-2 rounded-lg text-xs" style={{ background: form.pago === p ? c.accentSoft : c.surface, border: `1px solid ${form.pago === p ? c.accent : c.border}`, color: form.pago === p ? c.accent : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{form.pago === "Transferencia" ? "Podés transferir ahora o después de recibir el pedido. El comprobante es opcional." : "El pago en efectivo se coordina con el chofer."}</p></div>
-                {form.pago === "Transferencia" && (
-                  <div className="rounded-2xl p-4 space-y-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}44` }}>
-                    <div className="flex items-center gap-2"><Landmark size={17} color={c.accent} /><p className="f-body text-sm font-medium" style={{ color: c.text }}>Datos para transferir</p></div>
-                    <div className="flex items-center justify-between gap-4 rounded-xl px-3.5 py-3" style={{ background: c.surface, border: `1px solid ${c.accent}66` }}>
-                      <div>
-                        <p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Total exacto a transferir</p>
-                        <p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>Si pagás ahora, transferí este importe. También podés hacerlo después.</p>
-                      </div>
-                      <span className="f-display text-xl font-semibold whitespace-nowrap" style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span>
-                    </div>
-                    {datosTransferencia.configurados ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        {datosTransferencia.titular && <div><span className="block" style={{ color: c.textFaint }}>Titular</span><span className="f-body" style={{ color: c.text }}>{datosTransferencia.titular}</span></div>}
-                        {datosTransferencia.banco && <div><span className="block" style={{ color: c.textFaint }}>Banco</span><span className="f-body" style={{ color: c.text }}>{datosTransferencia.banco}</span></div>}
-                        {datosTransferencia.alias && <div><span className="block" style={{ color: c.textFaint }}>Alias</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.alias}</span></div>}
-                        {datosTransferencia.cbu && <div><span className="block" style={{ color: c.textFaint }}>CBU/CVU</span><span className="f-mono break-all" style={{ color: c.text }}>{datosTransferencia.cbu}</span></div>}
-                        {datosTransferencia.cuit && <div><span className="block" style={{ color: c.textFaint }}>CUIT</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.cuit}</span></div>}
-                      </div>
-                    ) : <p className="f-body text-xs" style={{ color: c.amber }}>Los datos todavía no están publicados. Podés confirmar el pedido y coordinar la transferencia después.</p>}
-                    <label className="f-body flex items-center justify-center gap-2 w-full px-3 py-3 rounded-xl text-xs font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobante ? c.success : c.accent}`, color: comprobante ? c.success : c.accent }}>
-                      {comprobante ? <FileCheck2 size={16} /> : <Upload size={16} />}
-                      <span className="truncate">{comprobante ? comprobante.name : "Subir captura del pago (opcional)"}</span>
-                      <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={e => setComprobante(e.target.files?.[0] || null)} />
-                    </label>
-                    <p className="f-body text-[10px]" style={{ color: c.textFaint }}>JPG, PNG o WebP · máximo 5 MB.</p>
-                  </div>
-                )}
-                <div>
-                  <p className="f-body text-xs mb-1.5" style={{ color: c.textMuted }}>Notas para la entrega <span style={{ color: c.textFaint }}>(opcional)</span></p>
-                  <textarea value={form.notas} maxLength={500} onChange={e => setForm({ ...form, notas: e.target.value })} rows={3} placeholder="Ej.: tocar timbre 2, portón negro, llamar antes de llegar..." className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
-                  <p className="f-body text-[10px] text-right mt-0.5" style={{ color: c.textFaint }}>{form.notas.length}/500</p>
+                {form.barrio && <div className="mt-4 rounded-[22px] p-4 sm:p-5 space-y-4 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+                  <div className="flex items-start gap-3"><div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: azulSuave }}><CalendarClock size={19} color={azulCliente} /></div><div><p className="f-body text-sm font-semibold" style={{ color: c.text }}>Elegí el día de entrega</p><p className="f-body text-xs mt-0.5" style={{ color: c.textFaint }}>Fechas disponibles para {form.barrio}.</p></div></div>
+                  {cargandoDisponibilidad ? <div className="flex items-center gap-2 py-2"><Spinner size={14} /><span className="f-body text-xs" style={{ color: c.textFaint }}>Buscando próximos turnos...</span></div> : disponibilidad.length > 0 ? <div className="flex gap-2 overflow-x-auto pb-1">{disponibilidad.slice(0, 10).map(d => <button key={d.fecha} onClick={() => setForm({ ...form, fechaEntrega: d.fecha, horarioZonaId: "" })} className="f-body shrink-0 rounded-2xl px-4 py-3 text-left" style={{ background: form.fechaEntrega === d.fecha ? azulSuave : c.surfaceAlt, border: `1px solid ${form.fechaEntrega === d.fecha ? azulCliente : c.border}` }}><span className="block text-sm font-semibold capitalize" style={{ color: form.fechaEntrega === d.fecha ? azulCliente : c.text }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", weekday: "short", day: "numeric" })}</span><span className="block text-[11px] mt-0.5 capitalize" style={{ color: c.textFaint }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", month: "short" })}</span></button>)}</div> : <p className="f-body text-xs px-3 py-2 rounded-xl" style={{ color: c.amber, background: c.amberSoft }}>No hay turnos disponibles para este barrio. Escribinos para coordinar.</p>}
+                  {fechaElegida && <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>Franja horaria aproximada</p><div className="grid gap-2">{fechaElegida.horarios.map(h => <button key={h.id} onClick={() => setForm({ ...form, horarioZonaId: h.id })} className="f-body w-full px-4 py-3 rounded-xl text-sm text-left" style={{ background: Number(form.horarioZonaId) === h.id ? azulSuave : c.surfaceAlt, border: `1px solid ${Number(form.horarioZonaId) === h.id ? azulCliente : c.border}`, color: Number(form.horarioZonaId) === h.id ? azulCliente : c.text }}>{formatearFranja(h.horaDesde, h.horaHasta)}{h.cupoDisponible <= 2 ? ` · ${h.cupoDisponible} cupo${h.cupoDisponible === 1 ? "" : "s"}` : ""}</button>)}</div><p className="f-body text-[11px] mt-2" style={{ color: c.textFaint }}>La hora es aproximada: el chofer organiza el recorrido dentro de esta franja.</p></div>}
+                </div>}
+                <div className="mt-4 rounded-[22px] p-4 sm:p-5 space-y-5 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+                  <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>Tipo de pedido</p><div className="f-body w-full px-4 py-3.5 rounded-xl text-sm flex items-center justify-between" style={{ background: c.surfaceAlt }}><span style={{ color: c.text }}>{segmento?.label || "—"}</span><span className="text-[11px]" style={{ color: c.textFaint }}>Elegido al inicio</span></div></div>
+                  <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>¿Cómo vas a pagar?</p><div className="grid grid-cols-2 gap-2">{PAGOS.map(p => <button key={p} onClick={() => { setForm({ ...form, pago: p }); if (p !== "Transferencia") setComprobante(null); }} className="f-body px-3 py-3 rounded-xl text-sm font-medium" style={{ background: form.pago === p ? azulSuave : c.surfaceAlt, border: `1px solid ${form.pago === p ? azulCliente : c.border}`, color: form.pago === p ? azulCliente : c.textMuted }}>{p}</button>)}</div><p className="f-body text-[11px] mt-2" style={{ color: c.textFaint }}>{form.pago === "Transferencia" ? "Podés transferir ahora o después de recibir el pedido. El comprobante es opcional." : "El pago en efectivo se coordina con el chofer."}</p></div>
+                  {form.pago === "Transferencia" && <div className="rounded-2xl p-4 space-y-3" style={{ background: azulSuave, border: `1px solid ${azulCliente}55` }}><div className="flex items-center gap-2"><Landmark size={18} color={azulCliente} /><p className="f-body text-sm font-semibold" style={{ color: c.text }}>Datos para transferir</p></div><div className="flex items-center justify-between gap-4 rounded-xl p-3.5" style={{ background: c.surface }}><div><p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Total exacto</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>Podés pagarlo ahora o después.</p></div><span className="f-display text-xl font-bold whitespace-nowrap" style={{ color: azulCliente }}>${totalPrecio.toLocaleString("es-AR")}</span></div>{datosTransferencia.configurados ? <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">{datosTransferencia.titular && <div><span className="block" style={{ color: c.textFaint }}>Titular</span><span style={{ color: c.text }}>{datosTransferencia.titular}</span></div>}{datosTransferencia.banco && <div><span className="block" style={{ color: c.textFaint }}>Banco</span><span style={{ color: c.text }}>{datosTransferencia.banco}</span></div>}{datosTransferencia.alias && <div><span className="block" style={{ color: c.textFaint }}>Alias</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.alias}</span></div>}{datosTransferencia.cbu && <div><span className="block" style={{ color: c.textFaint }}>CBU/CVU</span><span className="f-mono break-all" style={{ color: c.text }}>{datosTransferencia.cbu}</span></div>}{datosTransferencia.cuit && <div><span className="block" style={{ color: c.textFaint }}>CUIT</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.cuit}</span></div>}</div> : <p className="f-body text-xs" style={{ color: c.amber }}>Los datos todavía no están publicados. Podés confirmar y coordinar la transferencia después.</p>}<label className="f-body flex items-center justify-center gap-2 w-full px-3 py-3 rounded-xl text-xs font-semibold cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobante ? c.success : azulCliente}`, color: comprobante ? c.success : azulCliente }}>{comprobante ? <FileCheck2 size={16} /> : <Upload size={16} />}<span className="truncate">{comprobante ? comprobante.name : "Subir captura del pago (opcional)"}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={e => setComprobante(e.target.files?.[0] || null)} /></label></div>}
+                  <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>Notas para la entrega <span style={{ color: c.textFaint }}>(opcional)</span></p><textarea value={form.notas} maxLength={500} onChange={e => setForm({ ...form, notas: e.target.value })} rows={3} placeholder="Ej.: tocar timbre 2, portón negro, llamar antes de llegar..." className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /><p className="f-body text-[10px] text-right mt-1" style={{ color: c.textFaint }}>{form.notas.length}/500</p></div>
                 </div>
-                <div className="flex gap-2 pt-1"><button onClick={() => setStep(1)} className="f-body py-3 px-4 rounded-xl text-sm font-medium flex items-center gap-1.5" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ArrowLeft size={15} color={c.accent} /> Volver</button><button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId} onClick={() => setStep(3)} className="f-body flex-1 py-3 rounded-xl text-sm font-medium disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Revisar pedido</button></div>
-              </div>
+                <button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId} onClick={() => setStep(3)} className="f-body w-full mt-5 py-4 rounded-2xl text-sm font-semibold disabled:opacity-40" style={botonPrincipal}>Revisar pedido</button>
+              </section>
             )}
 
             {step === 3 && (
-              <div className="space-y-4">
-                <DeliveryMap barrio={form.barrio} direccion={form.calle} />
-                <div className="rounded-2xl p-4 space-y-2" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}>
-                  <div className="flex items-start gap-2"><CalendarClock size={16} color={c.accent} className="mt-0.5 shrink-0" /><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>{formatearFechaEntrega(form.fechaEntrega)}</p><p className="f-body text-xs mt-0.5" style={{ color: c.textMuted }}>{formatearFranja(horarioElegido?.horaDesde, horarioElegido?.horaHasta)} · horario aproximado</p></div></div>
-                  {form.notas && <div className="f-body text-xs pt-2" style={{ borderTop: `1px solid ${c.borderSoft}`, color: c.textMuted }}><b style={{ color: c.text }}>Notas:</b> {form.notas}</div>}
+              <section>
+                <button onClick={() => setStep(2)} className="f-body flex items-center gap-2 text-xs font-medium mb-4" style={{ color: azulCliente }}><ArrowLeft size={17} /> Volver a datos</button>
+                <h2 className="f-display text-2xl font-bold" style={{ color: c.text }}>Revisá tu pedido</h2>
+                <p className="f-body text-sm mt-1 mb-5" style={{ color: c.textMuted }}>Chequeá que esté todo bien antes de confirmarlo.</p>
+                <div className="space-y-4">
+                  <DeliveryMap barrio={form.barrio} direccion={form.calle} />
+                  <div className="rounded-[22px] p-4 sm:p-5" style={{ background: azulSuave, border: `1px solid ${azulCliente}44` }}><div className="flex items-start gap-3"><CalendarClock size={19} color={azulCliente} className="mt-0.5 shrink-0" /><div><p className="f-body text-sm font-semibold" style={{ color: c.text }}>{formatearFechaEntrega(form.fechaEntrega)}</p><p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>{formatearFranja(horarioElegido?.horaDesde, horarioElegido?.horaHasta)} · horario aproximado</p></div></div>{form.notas && <div className="f-body text-xs pt-3 mt-3" style={{ borderTop: `1px solid ${c.borderSoft}`, color: c.textMuted }}><b style={{ color: c.text }}>Notas:</b> {form.notas}</div>}</div>
+                  <div className="rounded-[22px] p-4 sm:p-5 space-y-3 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>{Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; const variante = varianteElegida(p); return <div key={id} className="flex justify-between gap-4 f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}{variante ? <span className="block text-[11px] mt-0.5" style={{ color: c.textFaint }}>{variante.nombre}</span> : null}</span><span className="f-mono whitespace-nowrap" style={{ color: c.textMuted }}>${(precioUnitarioElegido(p) * q).toLocaleString("es-AR")}</span></div>; })}<div className="h-px my-1" style={{ background: c.border }} /><div className="flex justify-between items-center"><span className="f-display text-base font-semibold" style={{ color: c.text }}>Total</span><span className="f-display text-xl font-bold" style={{ color: azulCliente }}>${totalPrecio.toLocaleString("es-AR")}</span></div><div className="flex justify-between gap-4 f-body text-xs pt-1"><span style={{ color: c.textMuted }}>Pago</span><span className="text-right" style={{ color: c.text }}>{form.pago}{form.pago === "Transferencia" ? (comprobante ? " · comprobante adjunto" : " · comprobante pendiente") : ""}</span></div></div>
+                  <div className="flex items-start gap-2.5 px-4 py-3 rounded-2xl" style={{ background: c.amberSoft }}><Clock size={16} color={c.amber} className="mt-0.5 shrink-0" /><span className="f-body text-xs leading-relaxed" style={{ color: c.text }}>El chofer organiza su recorrido dentro de la franja elegida; te avisaremos antes de llegar.</span></div>
+                  <button disabled={enviando} onClick={confirmar} className="f-body w-full py-4 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60" style={botonPrincipal}>{enviando && <Spinner size={15} />} Confirmar pedido</button>
                 </div>
-                <div className="rounded-2xl p-4 space-y-2.5" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                  {Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; const variante = varianteElegida(p); return <div key={id} className="flex justify-between gap-3 f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}{variante ? <span className="block text-[11px]" style={{ color: c.textFaint }}>{variante.nombre}</span> : null}</span><span className="f-mono whitespace-nowrap" style={{ color: c.textMuted }}>${(precioUnitarioElegido(p) * q).toLocaleString("es-AR")}</span></div>; })}
-                  <div className="h-px my-1" style={{ background: c.border }} />
-                  <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span></div>
-                  <div className="flex justify-between f-body text-xs pt-1"><span style={{ color: c.textMuted }}>Pago</span><span style={{ color: c.text }}>{form.pago}{form.pago === "Transferencia" ? (comprobante ? " · comprobante adjunto" : " · comprobante pendiente") : ""}</span></div>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.amberSoft }}><Clock size={15} color={c.amber} /><span className="f-body text-xs" style={{ color: c.text }}>El chofer organiza su recorrido dentro de la franja elegida; te avisaremos antes de llegar.</span></div>
-                <div className="flex gap-2"><button onClick={() => setStep(2)} className="f-body py-3 px-4 rounded-xl text-sm font-medium flex items-center gap-1.5" style={{ background: c.surface, color: c.textMuted, border: `1px solid ${c.border}` }}><ArrowLeft size={15} color={c.accent} /> Volver</button><button disabled={enviando} onClick={confirmar} className="f-body flex-1 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{enviando && <Spinner size={14} />} Confirmar pedido</button></div>
-              </div>
+              </section>
             )}
-          </div>
+            <AyudaCliente />
+          </main>
         )}
       </div>
 
-      <button onClick={onAccesoInterno} className="f-body flex items-center justify-center gap-1.5 py-4 text-[11px] opacity-60 hover:opacity-100 transition-opacity" style={{ color: c.textFaint }}>
-        <Lock size={11} /> Acceso interno
-      </button>
-      <WhatsAppFlotante />
+      <button onClick={onAccesoInterno} className="f-body flex items-center justify-center gap-1.5 py-4 text-[11px] opacity-60 hover:opacity-100 transition-opacity" style={{ color: c.textFaint }}><Lock size={11} /> Acceso interno</button>
     </div>
   );
 }
@@ -2785,7 +2784,7 @@ export default function App() {
   else if (view === "login") contenido = <LoginGate onLogin={login} onVolver={() => setView("vidriera")} />;
   else if (view === "admin" && session) contenido = <AdminPanel session={session} onLogout={logout} modo={modo} setModo={setModo} />;
   else if (view === "chofer" && session) contenido = <ChoferPanel session={session} onLogout={logout} />;
-  else contenido = <ClientePortal onAccesoInterno={() => setView("gate")} />;
+  else contenido = <ClientePortal onAccesoInterno={() => setView("gate")} modo={modo} setModo={setModo} />;
 
   return (
     <ThemeContext.Provider value={c}>
@@ -2793,7 +2792,7 @@ export default function App() {
         {fonts}
         <ErrorModal />
         <ConfirmModal />
-        {view !== "admin" && <ThemeToggleFlotante modo={modo} setModo={setModo} c={c} />}
+        {view !== "admin" && view !== "vidriera" && <ThemeToggleFlotante modo={modo} setModo={setModo} c={c} />}
         <main className="flex-1 flex flex-col">{contenido}</main>
         <SystemFooter />
       </div>
