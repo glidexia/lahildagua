@@ -596,6 +596,14 @@ function ClientePortal({ onAccesoInterno }) {
     });
     setCant(prev => ({ ...prev, [producto.id]: yaElegida ? 0 : variante.cantidad }));
   };
+  const cambiarCantidadSuelta = (producto, delta) => {
+    setVariantesElegidas(prev => {
+      const siguiente = { ...prev };
+      delete siguiente[producto.id];
+      return siguiente;
+    });
+    setCant(prev => ({ ...prev, [producto.id]: Math.max(0, (variantesElegidas[producto.id] ? 0 : (prev[producto.id] || 0)) + delta) }));
+  };
 
   const elegirSegmento = (op) => {
     setSegmento(op);
@@ -687,15 +695,20 @@ function ClientePortal({ onAccesoInterno }) {
                 {productosDelSegmento.map(p => {
                   const esMayorista = segmento?.categoria === "comercio_reventa" && (p.variantes || []).length > 0;
                   const elegida = varianteElegida(p);
+                  const cantidadSuelta = elegida ? 0 : (cant[p.id] || 0);
                   if (esMayorista) return (
-                    <div key={p.id} className="rounded-2xl overflow-hidden" style={{ background: c.surface, border: `1px solid ${elegida ? c.accent : c.border}` }}>
+                    <div key={p.id} className="rounded-2xl overflow-hidden" style={{ background: c.surface, border: `1px solid ${elegida || cantidadSuelta ? c.accent : c.border}` }}>
                       <button onClick={() => setProductosAbiertos(prev => ({ ...prev, [p.id]: !prev[p.id] }))} className="w-full p-4 flex items-center gap-3 text-left">
                         <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.accentSoft }}>{p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" loading="lazy" /> : <Droplet size={18} color={c.accent} />}</div>
-                        <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{elegida ? `${elegida.nombre} · ${elegida.cantidad} unidades` : (p.descripcion || "Ver cantidades y precios mayoristas")}</p>{elegida && <p className="f-mono text-xs mt-1" style={{ color: c.accent }}>${(Number(elegida.precioUnitario) * elegida.cantidad).toLocaleString("es-AR")} total</p>}</div>
+                        <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{elegida ? `${elegida.nombre} · ${elegida.cantidad} unidades` : cantidadSuelta ? `Compra unidad · ${cantidadSuelta} unidad${cantidadSuelta === 1 ? "" : "es"}` : (p.descripcion || "Ver cantidades y precios mayoristas")}</p>{(elegida || cantidadSuelta > 0) && <p className="f-mono text-xs mt-1" style={{ color: c.accent }}>${(precioUnitarioElegido(p) * (cant[p.id] || 0)).toLocaleString("es-AR")} total</p>}</div>
                         <ChevronDown size={18} color={c.textMuted} className={`transition-transform ${productosAbiertos[p.id] ? "rotate-180" : ""}`} />
                       </button>
                       {productosAbiertos[p.id] && <div className="px-3 pb-3 space-y-2" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
                         <p className="f-body text-[11px] pt-3" style={{ color: c.textMuted }}>Elegí la cantidad que querés comprar</p>
+                        <div className="w-full rounded-xl p-3 flex items-center justify-between gap-3" style={{ background: cantidadSuelta ? c.accentSoft : c.surfaceAlt, border: `1px solid ${cantidadSuelta ? c.accent : c.borderSoft}` }}>
+                          <div><p className="f-body text-xs font-medium" style={{ color: cantidadSuelta ? c.accent : c.text }}>Compra unidad</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>${Number(p.precio).toLocaleString("es-AR")} por unidad</p></div>
+                          <div className="flex items-center gap-2"><button onClick={() => cambiarCantidadSuelta(p, -1)} disabled={!cantidadSuelta} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-35" style={{ background: c.surface }} aria-label={`Quitar una unidad de ${p.nombre}`}><Minus size={13} color={c.textMuted} /></button><span className="f-mono text-sm min-w-6 text-center" style={{ color: c.text }}>{cantidadSuelta}</span><button onClick={() => cambiarCantidadSuelta(p, 1)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: c.surface }} aria-label={`Agregar una unidad de ${p.nombre}`}><Plus size={13} color={c.accent} /></button></div>
+                        </div>
                         {p.variantes.map(variante => {
                           const seleccionada = elegida?.id === variante.id;
                           return <button key={variante.id} onClick={() => elegirVariante(p, variante)} className="w-full rounded-xl p-3 flex items-center justify-between gap-3 text-left" style={{ background: seleccionada ? c.accentSoft : c.surfaceAlt, border: `1px solid ${seleccionada ? c.accent : c.borderSoft}` }}>
