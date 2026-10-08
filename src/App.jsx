@@ -6,7 +6,7 @@ import {
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
   Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
-  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download
+  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download, ChevronDown
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -537,6 +537,8 @@ function ClientePortal({ onAccesoInterno }) {
   const [step, setStep] = useState(0); // 0: segmento, 1: productos, 2: datos, 3: revisión
   const [segmento, setSegmento] = useState(null); // { id, categoria, label }
   const [cant, setCant] = useState({});
+  const [variantesElegidas, setVariantesElegidas] = useState({});
+  const [productosAbiertos, setProductosAbiertos] = useState({});
   const [form, setForm] = useState(formularioInicialCliente);
   const [datosTransferencia, setDatosTransferencia] = useState({ titular: "", banco: "", alias: "", cbu: "", cuit: "", configurados: false });
   const [comprobante, setComprobante] = useState(null);
@@ -575,15 +577,31 @@ function ClientePortal({ onAccesoInterno }) {
 
   const productosDelSegmento = productos.filter(p => !segmento || p.categoria === segmento.categoria);
   const totalItems = Object.values(cant).reduce((a, b) => a + b, 0);
-  const totalPrecio = Object.entries(cant).reduce((sum, [id, q]) => sum + (productos.find(p => p.id === Number(id))?.precio ? Number(productos.find(p => p.id === Number(id)).precio) * q : 0), 0);
+  const varianteElegida = (producto) => (producto.variantes || []).find(variante => variante.id === variantesElegidas[producto.id]);
+  const precioUnitarioElegido = (producto) => Number(varianteElegida(producto)?.precioUnitario ?? producto.precio ?? 0);
+  const totalPrecio = Object.entries(cant).reduce((sum, [id, q]) => {
+    const producto = productos.find(p => p.id === Number(id));
+    return sum + (producto ? precioUnitarioElegido(producto) * q : 0);
+  }, 0);
   const camionAsignado = useMemo(() => { const z = zonas.find(x => x.barrio === form.barrio); return z ? { id: z.camionId, nombre: z.nombre, color: z.color } : null; }, [form.barrio, zonas]);
   const fechaElegida = disponibilidad.find(d => d.fecha === form.fechaEntrega);
   const horarioElegido = fechaElegida?.horarios.find(h => h.id === Number(form.horarioZonaId));
   const setQty = (id, delta) => setCant(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }));
+  const elegirVariante = (producto, variante) => {
+    const yaElegida = variantesElegidas[producto.id] === variante.id;
+    setVariantesElegidas(prev => {
+      const siguiente = { ...prev };
+      if (yaElegida) delete siguiente[producto.id]; else siguiente[producto.id] = variante.id;
+      return siguiente;
+    });
+    setCant(prev => ({ ...prev, [producto.id]: yaElegida ? 0 : variante.cantidad }));
+  };
 
   const elegirSegmento = (op) => {
     setSegmento(op);
     setCant({});
+    setVariantesElegidas({});
+    setProductosAbiertos({});
     setForm(prev => ({ ...prev, tipo: TIPO_DESTINO_POR_SEGMENTO[op.id] || "casa" }));
     setStep(1);
   };
@@ -591,7 +609,7 @@ function ClientePortal({ onAccesoInterno }) {
   const confirmar = async () => {
     setEnviando(true); setError("");
     try {
-      const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q }));
+      const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q, ...(variantesElegidas[id] ? { varianteId: variantesElegidas[id] } : {}) }));
       const pedido = { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, notas: form.notas, fechaEntrega: form.fechaEntrega, horarioZonaId: Number(form.horarioZonaId), items };
       let body = pedido;
       if (form.pago === "Transferencia" && comprobante) {
@@ -641,7 +659,7 @@ function ClientePortal({ onAccesoInterno }) {
               <div className="h-px" style={{ background: c.border }} />
               <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
             </div>
-            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setDisponibilidad([]); setComprobante(null); setForm(formularioInicialCliente()); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
+            <button onClick={() => { setConfirmado(null); setStep(0); setSegmento(null); setCant({}); setVariantesElegidas({}); setProductosAbiertos({}); setDisponibilidad([]); setComprobante(null); setForm(formularioInicialCliente()); }} className="f-body mt-6 text-sm underline" style={{ color: c.textMuted }}>Hacer otro pedido</button>
           </div>
         ) : (
           <div className="max-w-md mx-auto px-4 py-6">
@@ -666,19 +684,36 @@ function ClientePortal({ onAccesoInterno }) {
             {step === 1 && (
               <div className="space-y-3">
                 <button onClick={() => setStep(0)} className="f-body flex w-fit items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium mb-2 transition-opacity hover:opacity-80" style={{ color: c.textMuted, background: c.surface, border: `1px solid ${c.border}` }}><ArrowLeft size={15} color={c.accent} /> Volver a elegir categoría <span style={{ color: c.accent }}>· {segmento?.label}</span></button>
-                {productosDelSegmento.map(p => (
-                  <div key={p.id} className="rounded-2xl p-4 flex items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                    <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.accentSoft }}>
-                      {p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" loading="lazy" /> : <Droplet size={18} color={c.accent} />}
+                {productosDelSegmento.map(p => {
+                  const esMayorista = segmento?.categoria === "comercio_reventa" && (p.variantes || []).length > 0;
+                  const elegida = varianteElegida(p);
+                  if (esMayorista) return (
+                    <div key={p.id} className="rounded-2xl overflow-hidden" style={{ background: c.surface, border: `1px solid ${elegida ? c.accent : c.border}` }}>
+                      <button onClick={() => setProductosAbiertos(prev => ({ ...prev, [p.id]: !prev[p.id] }))} className="w-full p-4 flex items-center gap-3 text-left">
+                        <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.accentSoft }}>{p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" loading="lazy" /> : <Droplet size={18} color={c.accent} />}</div>
+                        <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{elegida ? `${elegida.nombre} · ${elegida.cantidad} unidades` : (p.descripcion || "Ver cantidades y precios mayoristas")}</p>{elegida && <p className="f-mono text-xs mt-1" style={{ color: c.accent }}>${(Number(elegida.precioUnitario) * elegida.cantidad).toLocaleString("es-AR")} total</p>}</div>
+                        <ChevronDown size={18} color={c.textMuted} className={`transition-transform ${productosAbiertos[p.id] ? "rotate-180" : ""}`} />
+                      </button>
+                      {productosAbiertos[p.id] && <div className="px-3 pb-3 space-y-2" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+                        <p className="f-body text-[11px] pt-3" style={{ color: c.textMuted }}>Elegí la cantidad que querés comprar</p>
+                        {p.variantes.map(variante => {
+                          const seleccionada = elegida?.id === variante.id;
+                          return <button key={variante.id} onClick={() => elegirVariante(p, variante)} className="w-full rounded-xl p-3 flex items-center justify-between gap-3 text-left" style={{ background: seleccionada ? c.accentSoft : c.surfaceAlt, border: `1px solid ${seleccionada ? c.accent : c.borderSoft}` }}>
+                            <div><p className="f-body text-xs font-medium" style={{ color: seleccionada ? c.accent : c.text }}>{variante.nombre}</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>{variante.cantidad} unidades · ${Number(variante.precioUnitario).toLocaleString("es-AR")} c/u</p></div>
+                            <span className="f-mono text-sm font-semibold whitespace-nowrap" style={{ color: seleccionada ? c.accent : c.text }}>${(Number(variante.precioUnitario) * variante.cantidad).toLocaleString("es-AR")}</span>
+                          </button>;
+                        })}
+                      </div>}
                     </div>
-                    <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{p.descripcion}</p><p className="f-mono text-xs mt-0.5" style={{ color: c.accent }}>${Number(p.precio).toLocaleString("es-AR")}</p></div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setQty(p.id, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={13} color={c.textMuted} /></button>
-                      <span className="f-mono text-sm w-4 text-center" style={{ color: c.text }}>{cant[p.id] || 0}</span>
-                      <button onClick={() => setQty(p.id, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.accentSoft }}><Plus size={13} color={c.accent} /></button>
+                  );
+                  return (
+                    <div key={p.id} className="rounded-2xl p-4 flex items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+                      <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: c.accentSoft }}>{p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" loading="lazy" /> : <Droplet size={18} color={c.accent} />}</div>
+                      <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-xs" style={{ color: c.textFaint }}>{p.descripcion}</p><p className="f-mono text-xs mt-0.5" style={{ color: c.accent }}>${Number(p.precio).toLocaleString("es-AR")}</p></div>
+                      <div className="flex items-center gap-2"><button onClick={() => setQty(p.id, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }}><Minus size={13} color={c.textMuted} /></button><span className="f-mono text-sm w-4 text-center" style={{ color: c.text }}>{cant[p.id] || 0}</span><button onClick={() => setQty(p.id, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.accentSoft }}><Plus size={13} color={c.accent} /></button></div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {productosDelSegmento.length === 0 && <p className="f-body text-xs text-center py-6" style={{ color: c.textFaint }}>Todavía no hay productos cargados para esta categoría.</p>}
                 <button disabled={totalItems === 0} onClick={() => setStep(2)} className="f-body w-full mt-2 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>Continuar ({totalItems}) <ChevronRight size={15} /></button>
               </div>
@@ -777,7 +812,7 @@ function ClientePortal({ onAccesoInterno }) {
                   {form.notas && <div className="f-body text-xs pt-2" style={{ borderTop: `1px solid ${c.borderSoft}`, color: c.textMuted }}><b style={{ color: c.text }}>Notas:</b> {form.notas}</div>}
                 </div>
                 <div className="rounded-2xl p-4 space-y-2.5" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                  {Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; return <div key={id} className="flex justify-between f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}</span><span className="f-mono" style={{ color: c.textMuted }}>${(Number(p.precio) * q).toLocaleString("es-AR")}</span></div>; })}
+                  {Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => { const p = productos.find(x => x.id === Number(id)); if (!p) return null; const variante = varianteElegida(p); return <div key={id} className="flex justify-between gap-3 f-body text-sm"><span style={{ color: c.text }}>{q}× {p.nombre}{variante ? <span className="block text-[11px]" style={{ color: c.textFaint }}>{variante.nombre}</span> : null}</span><span className="f-mono whitespace-nowrap" style={{ color: c.textMuted }}>${(precioUnitarioElegido(p) * q).toLocaleString("es-AR")}</span></div>; })}
                   <div className="h-px my-1" style={{ background: c.border }} />
                   <div className="flex justify-between f-display text-base font-semibold"><span style={{ color: c.text }}>Total</span><span style={{ color: c.accent }}>${totalPrecio.toLocaleString("es-AR")}</span></div>
                   <div className="flex justify-between f-body text-xs pt-1"><span style={{ color: c.textMuted }}>Pago</span><span style={{ color: c.text }}>{form.pago}{form.pago === "Transferencia" ? (comprobante ? " · comprobante adjunto" : " · comprobante pendiente") : ""}</span></div>
@@ -1882,13 +1917,48 @@ function AdminClientes({ token }) {
 }
 
 /* ---------------------------------- ADMIN: CATÁLOGO (3 catálogos separados) ---------------------------------- */
-function ListaProductos({ productos, onEditarPrecio, onToggleActivo, onEliminar, onSubirImagen, onEliminarImagen, subiendoImagen }) {
+function EditorVariantesMayoristas({ producto, onCrear, onEditar, onEliminar }) {
+  const c = useTheme();
+  const [abierto, setAbierto] = useState(false);
+  const [nuevo, setNuevo] = useState({ nombre: "", cantidad: "", precioUnitario: "" });
+  const variantes = producto.variantes || [];
+  const agregar = async () => {
+    if (!nuevo.nombre.trim() || !nuevo.cantidad || !nuevo.precioUnitario) return mostrarErrorGlobal("Completá el nombre, la cantidad y el precio unitario de la opción.");
+    const creado = await onCrear(producto.id, { nombre: nuevo.nombre, cantidad: Number(nuevo.cantidad), precioUnitario: Number(nuevo.precioUnitario), orden: variantes.length });
+    if (creado) setNuevo({ nombre: "", cantidad: "", precioUnitario: "" });
+  };
+  return (
+    <div className="sm:ml-[68px] rounded-xl overflow-hidden" style={{ border: `1px solid ${c.borderSoft}`, background: c.bgAlt }}>
+      <button onClick={() => setAbierto(actual => !actual)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left">
+        <div><p className="f-body text-xs font-medium" style={{ color: c.text }}>Cantidades y precios mayoristas</p><p className="f-body text-[10px] mt-0.5" style={{ color: c.textFaint }}>{variantes.length ? `${variantes.length} opción${variantes.length === 1 ? "" : "es"} configurada${variantes.length === 1 ? "" : "s"}` : "Agregá las opciones que verá el cliente al desplegar el producto"}</p></div>
+        <ChevronDown size={16} color={c.accent} className={`transition-transform ${abierto ? "rotate-180" : ""}`} />
+      </button>
+      {abierto && <div className="p-3 space-y-2" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+        {variantes.map(variante => <div key={variante.id} className="grid grid-cols-1 sm:grid-cols-[1fr_100px_130px_auto] gap-2 items-center rounded-xl p-2" style={{ background: c.surface, opacity: variante.activo ? 1 : 0.55 }}>
+          <input defaultValue={variante.nombre} aria-label="Nombre de la opción" onBlur={e => { const valor = e.target.value.trim(); if (valor && valor !== variante.nombre) onEditar(producto.id, variante.id, { nombre: valor }); }} className="f-body min-w-0 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} />
+          <div className="relative"><input type="number" min="1" defaultValue={variante.cantidad} aria-label="Cantidad" onBlur={e => { const valor = Number(e.target.value); if (valor > 0 && valor !== variante.cantidad) onEditar(producto.id, variante.id, { cantidad: valor }); }} className="f-mono w-full px-2.5 py-2 pr-8 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /><span className="absolute right-2 top-2 f-body text-[10px]" style={{ color: c.textFaint }}>un.</span></div>
+          <div className="relative"><span className="absolute left-2 top-2 f-mono text-xs" style={{ color: c.textFaint }}>$</span><input type="number" min="1" defaultValue={variante.precioUnitario} aria-label="Precio unitario" onBlur={e => { const valor = Number(e.target.value); if (valor > 0 && valor !== Number(variante.precioUnitario)) onEditar(producto.id, variante.id, { precioUnitario: valor }); }} className="f-mono w-full pl-5 pr-8 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /><span className="absolute right-2 top-2 f-body text-[10px]" style={{ color: c.textFaint }}>c/u</span></div>
+          <div className="flex items-center gap-1 justify-end"><button onClick={() => onEditar(producto.id, variante.id, { activo: !variante.activo })} className="f-body px-2 py-1.5 rounded-lg text-[10px]" style={{ background: variante.activo ? c.successSoft : c.dangerSoft, color: variante.activo ? c.success : c.danger }}>{variante.activo ? "Visible" : "Oculta"}</button><button onClick={() => onEliminar(producto, variante)} className="p-1.5 rounded-lg" style={{ background: c.dangerSoft }} aria-label={`Eliminar ${variante.nombre}`}><Trash2 size={12} color={c.danger} /></button></div>
+          <p className="sm:col-span-4 f-body text-[10px] px-1" style={{ color: c.textFaint }}>Total mostrado: ${(Number(variante.precioUnitario) * variante.cantidad).toLocaleString("es-AR")}</p>
+        </div>)}
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_100px_130px_auto] gap-2 items-center rounded-xl p-2" style={{ border: `1px dashed ${c.border}` }}>
+          <input value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="Ej.: x 15 unidades" className="f-body min-w-0 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+          <input type="number" min="1" value={nuevo.cantidad} onChange={e => setNuevo({ ...nuevo, cantidad: e.target.value })} placeholder="Cantidad" className="f-mono w-full px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+          <input type="number" min="1" value={nuevo.precioUnitario} onChange={e => setNuevo({ ...nuevo, precioUnitario: e.target.value })} placeholder="$ por unidad" className="f-mono w-full px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+          <button onClick={agregar} className="f-body inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-[11px] font-medium" style={{ background: c.accent, color: c.bgAlt }}><Plus size={12} /> Agregar</button>
+        </div>
+      </div>}
+    </div>
+  );
+}
+
+function ListaProductos({ productos, esMayorista, onEditarPrecio, onToggleActivo, onEliminar, onSubirImagen, onEliminarImagen, subiendoImagen, onCrearVariante, onEditarVariante, onEliminarVariante }) {
   const c = useTheme();
   return (
     <div className="space-y-2">
       {productos.map(p => (
-        <div key={p.id} className="rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center gap-3" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: p.activo ? 1 : 0.5 }}>
-          <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div key={p.id} className="rounded-2xl p-3.5 flex flex-col gap-3" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: p.activo ? 1 : 0.5 }}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3"><div className="flex items-center gap-3 flex-1 min-w-0">
             <label className="group relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" style={{ background: c.accentSoft, border: `1px dashed ${c.accent}66` }} title="Elegir o reemplazar imagen">
               {p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" /> : <Package size={18} color={c.accent} />}
               <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(2,8,23,.58)" }}><ImagePlus size={18} color="#fff" /></span>
@@ -1902,7 +1972,8 @@ function ListaProductos({ productos, onEditarPrecio, onToggleActivo, onEliminar,
             <button onClick={() => onToggleActivo(p.id, p.activo)} className="f-body text-[11px] px-2.5 py-1.5 rounded-lg font-medium whitespace-nowrap" style={{ background: p.activo ? c.successSoft : c.dangerSoft, color: p.activo ? c.success : c.danger }}>{p.activo ? "Activo" : "Oculto"}</button>
             {p.imagenUrl && <button onClick={() => onEliminarImagen(p)} className="p-1.5 rounded-lg" style={{ background: c.surfaceAlt }} title={`Quitar foto de ${p.nombre}`} aria-label={`Quitar foto de ${p.nombre}`}><X size={13} color={c.textMuted} /></button>}
             <button onClick={() => onEliminar(p)} className="p-1.5 rounded-lg" style={{ background: c.dangerSoft }} title={`Eliminar definitivamente ${p.nombre}`} aria-label={`Eliminar definitivamente ${p.nombre}`}><Trash2 size={13} color={c.danger} /></button>
-          </div>
+          </div></div>
+          {esMayorista && <EditorVariantesMayoristas producto={p} onCrear={onCrearVariante} onEditar={onEditarVariante} onEliminar={onEliminarVariante} />}
         </div>
       ))}
       {productos.length === 0 && <p className="f-body text-xs py-4" style={{ color: c.textFaint }}>Sin productos en esta categoría todavía.</p>}
@@ -1969,6 +2040,30 @@ function AdminCatalogo({ token }) {
       setMensaje("Imagen eliminada.");
     } catch (e) { setError(e.message || "No se pudo quitar la imagen."); }
   };
+  const crearVariante = async (productoId, datos) => {
+    try {
+      const variante = await api(`/admin/productos/${productoId}/variantes`, { method: "POST", token, body: datos });
+      setProductos(prev => prev.map(producto => producto.id === productoId ? { ...producto, variantes: [...(producto.variantes || []), variante] } : producto));
+      setMensaje("Opción mayorista agregada.");
+      return true;
+    } catch (e) { setError(e.message || "No se pudo agregar la opción mayorista."); return false; }
+  };
+  const editarVariante = async (productoId, varianteId, cambios) => {
+    setError("");
+    try {
+      const variante = await api(`/admin/productos/${productoId}/variantes/${varianteId}`, { method: "PATCH", token, body: cambios });
+      setProductos(prev => prev.map(producto => producto.id === productoId ? { ...producto, variantes: (producto.variantes || []).map(actual => actual.id === varianteId ? variante : actual) } : producto));
+    } catch (e) { setError(e.message || "No se pudo actualizar la opción mayorista."); cargar(); }
+  };
+  const eliminarVariante = async (producto, variante) => {
+    const confirmado = await confirmarAccion({ titulo: `¿Eliminar "${variante.nombre}"?`, mensaje: `Se quitará esta cantidad de ${producto.nombre}. Los pedidos anteriores conservarán su precio.`, textoConfirmar: "Eliminar opción" });
+    if (!confirmado) return;
+    try {
+      await api(`/admin/productos/${producto.id}/variantes/${variante.id}`, { method: "DELETE", token });
+      setProductos(prev => prev.map(actual => actual.id === producto.id ? { ...actual, variantes: (actual.variantes || []).filter(item => item.id !== variante.id) } : actual));
+      setMensaje("Opción mayorista eliminada.");
+    } catch (e) { setError(e.message || "No se pudo eliminar la opción mayorista."); }
+  };
   const agregar = async () => {
     if (!nuevo.nombre || !nuevo.precio) return;
     try { await api("/admin/productos", { method: "POST", token, body: { nombre: nuevo.nombre, descripcion: nuevo.descripcion, precio: Number(nuevo.precio), categoria: tab } }); setNuevo({ nombre: "", precio: "", descripcion: "" }); cargar(); }
@@ -1992,14 +2087,14 @@ function AdminCatalogo({ token }) {
       <ErrorBanner mensaje={error} />
       {mensaje && <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.successSoft }}><CheckCircle2 size={14} color={c.success} /><span className="f-body text-xs" style={{ color: c.success }}>{mensaje}</span></div>}
 
-      <ListaProductos productos={delTab} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} onSubirImagen={subirImagen} onEliminarImagen={eliminarImagen} subiendoImagen={subiendoImagen} />
+      <ListaProductos productos={delTab} esMayorista={tab === "comercio_reventa"} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} onSubirImagen={subirImagen} onEliminarImagen={eliminarImagen} subiendoImagen={subiendoImagen} onCrearVariante={crearVariante} onEditarVariante={editarVariante} onEliminarVariante={eliminarVariante} />
 
       <div className="rounded-2xl p-3.5 flex flex-col gap-2" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
         <p className="f-body text-xs font-medium" style={{ color: c.textMuted }}>Agregar producto a {catalogoActivo?.label}</p>
         <Input placeholder="Nombre del producto" value={nuevo.nombre} onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} />
         <Input placeholder="Descripción (opcional)" value={nuevo.descripcion} onChange={e => setNuevo({ ...nuevo, descripcion: e.target.value })} />
         <div className="flex gap-2">
-          <input type="number" placeholder="Precio" value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} className="f-body flex-1 px-3 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+          <input type="number" placeholder={tab === "comercio_reventa" ? "Precio unitario base" : "Precio"} value={nuevo.precio} onChange={e => setNuevo({ ...nuevo, precio: e.target.value })} className="f-body flex-1 px-3 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
           <button onClick={agregar} className="f-body px-3.5 py-2.5 rounded-xl text-xs font-medium flex items-center gap-1 shrink-0" style={{ background: c.accent, color: c.bgAlt }}><Plus size={14} /> Agregar</button>
         </div>
       </div>
