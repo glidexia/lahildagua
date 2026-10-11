@@ -678,6 +678,10 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
   const [disponibilidad, setDisponibilidad] = useState([]);
   const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
   const [intentoRevision, setIntentoRevision] = useState(false);
+  const [detectandoBarrio, setDetectandoBarrio] = useState(false);
+  const [avisoBarrio, setAvisoBarrio] = useState(null);
+  const barrioAutomatico = useRef(false);
+  const consultaBarrio = useRef(0);
 
   useEffect(() => {
     (async () => {
@@ -760,7 +764,46 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
     setStep(1);
   };
 
-  const cambiarBarrio = barrio => setForm(prev => ({ ...prev, barrio, fechaEntrega: "", horarioZonaId: "" }));
+  const cambiarCalle = calle => {
+    consultaBarrio.current += 1;
+    setDetectandoBarrio(false);
+    setAvisoBarrio(null);
+    const limpiarBarrioAutomatico = barrioAutomatico.current;
+    barrioAutomatico.current = false;
+    setForm(prev => limpiarBarrioAutomatico
+      ? { ...prev, calle, barrio: "", fechaEntrega: "", horarioZonaId: "" }
+      : { ...prev, calle });
+  };
+  const cambiarBarrio = barrio => {
+    consultaBarrio.current += 1;
+    barrioAutomatico.current = false;
+    setDetectandoBarrio(false);
+    setAvisoBarrio(null);
+    setForm(prev => ({ ...prev, barrio, fechaEntrega: "", horarioZonaId: "" }));
+  };
+  const detectarBarrioDesdeCalle = async () => {
+    const calle = form.calle.trim();
+    if (form.barrio || calle.length < 5 || !/\d/.test(calle)) return;
+    const consulta = ++consultaBarrio.current;
+    setDetectandoBarrio(true);
+    setAvisoBarrio(null);
+    try {
+      const data = await api("/public/detectar-zona", { method: "POST", body: { calle } });
+      if (consulta !== consultaBarrio.current) return;
+      if (data.barrio && zonas.some(zona => zona.barrio === data.barrio)) {
+        barrioAutomatico.current = true;
+        setForm(prev => ({ ...prev, barrio: data.barrio, fechaEntrega: "", horarioZonaId: "" }));
+        setAvisoBarrio({ tipo: "ok", texto: `Barrio detectado: ${data.barrio}. Podés cambiarlo si no coincide.` });
+      } else {
+        barrioAutomatico.current = false;
+        setAvisoBarrio({ tipo: "aviso", texto: "No pudimos identificar el barrio con seguridad. Elegilo abajo." });
+      }
+    } catch {
+      if (consulta === consultaBarrio.current) setAvisoBarrio({ tipo: "aviso", texto: "No pudimos detectar el barrio. Elegilo abajo." });
+    } finally {
+      if (consulta === consultaBarrio.current) setDetectandoBarrio(false);
+    }
+  };
   const elegirFechaEntrega = dia => {
     const unicoHorario = dia.horarios?.length === 1 ? dia.horarios[0].id : "";
     setForm(prev => ({ ...prev, fechaEntrega: dia.fecha, horarioZonaId: unicoHorario }));
@@ -910,7 +953,9 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
                 <div className="rounded-[22px] p-4 sm:p-5 space-y-3.5 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
                   <Input name="name" autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} aria-invalid={campoInvalido("nombre") || undefined} className="min-h-[52px]" style={campoInvalido("nombre") ? { border: `1px solid ${c.danger}` } : {}} />
                   <Input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} aria-invalid={campoInvalido("telefono") || undefined} className="min-h-[52px]" style={campoInvalido("telefono") ? { border: `1px solid ${c.danger}` } : {}} />
-                  <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} aria-invalid={campoInvalido("calle") || undefined} className="min-h-[52px]" style={campoInvalido("calle") ? { border: `1px solid ${c.danger}` } : {}} />
+                  <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => cambiarCalle(e.target.value)} onBlur={detectarBarrioDesdeCalle} aria-invalid={campoInvalido("calle") || undefined} className="min-h-[52px]" style={campoInvalido("calle") ? { border: `1px solid ${c.danger}` } : {}} />
+                  {detectandoBarrio && <div role="status" className="f-body flex items-center gap-2 px-1 text-xs" style={{ color: azulCliente }}><Spinner size={13} /> Buscando el barrio de esta dirección...</div>}
+                  {!detectandoBarrio && avisoBarrio && <div role="status" className="f-body flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs" style={{ background: avisoBarrio.tipo === "ok" ? c.successSoft : c.amberSoft, color: avisoBarrio.tipo === "ok" ? c.success : c.amber }}><span className="mt-0.5 shrink-0">{avisoBarrio.tipo === "ok" ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}</span><span>{avisoBarrio.texto}</span></div>}
                   <SelectorBarrio zonas={zonas} valor={form.barrio} onChange={cambiarBarrio} color={azulCliente} invalido={campoInvalido("barrio")} />
                 </div>
                 {form.barrio && <div className="mt-4 rounded-[22px] p-4 sm:p-5 space-y-4 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
