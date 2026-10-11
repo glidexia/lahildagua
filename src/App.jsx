@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
 import {
   Droplet, Droplets, Package, Truck, User, MapPin, Building2, Store,
@@ -577,6 +577,87 @@ function AyudaCliente() {
   );
 }
 
+function normalizarBusqueda(texto) {
+  return String(texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function SelectorBarrio({ zonas, valor, onChange, color, invalido }) {
+  const c = useTheme();
+  const contenedor = useRef(null);
+  const [consulta, setConsulta] = useState(valor || "");
+  const [abierto, setAbierto] = useState(false);
+  const [indiceActivo, setIndiceActivo] = useState(0);
+
+  useEffect(() => { setConsulta(valor || ""); }, [valor]);
+  useEffect(() => {
+    const cerrar = evento => { if (!contenedor.current?.contains(evento.target)) setAbierto(false); };
+    document.addEventListener("mousedown", cerrar);
+    return () => document.removeEventListener("mousedown", cerrar);
+  }, []);
+
+  const opciones = useMemo(() => {
+    const busqueda = normalizarBusqueda(consulta);
+    return zonas.filter(zona => !busqueda || normalizarBusqueda(zona.barrio).includes(busqueda));
+  }, [consulta, zonas]);
+
+  const elegir = barrio => {
+    setConsulta(barrio);
+    setAbierto(false);
+    setIndiceActivo(0);
+    onChange(barrio);
+  };
+
+  const escribir = evento => {
+    const siguiente = evento.target.value;
+    setConsulta(siguiente);
+    setAbierto(true);
+    setIndiceActivo(0);
+    if (valor && normalizarBusqueda(siguiente) !== normalizarBusqueda(valor)) onChange("");
+  };
+
+  const manejarTecla = evento => {
+    if (evento.key === "ArrowDown") {
+      evento.preventDefault();
+      setAbierto(true);
+      setIndiceActivo(actual => Math.min(actual + 1, Math.max(opciones.length - 1, 0)));
+    } else if (evento.key === "ArrowUp") {
+      evento.preventDefault();
+      setIndiceActivo(actual => Math.max(actual - 1, 0));
+    } else if (evento.key === "Enter" && abierto && opciones[indiceActivo]) {
+      evento.preventDefault();
+      elegir(opciones[indiceActivo].barrio);
+    } else if (evento.key === "Escape") setAbierto(false);
+  };
+
+  return (
+    <div ref={contenedor} className="relative">
+      <Search size={17} color={c.textFaint} className="absolute left-4 top-[18px] z-10 pointer-events-none" />
+      <input
+        type="search"
+        name="address-level3"
+        autoComplete="off"
+        value={consulta}
+        onChange={escribir}
+        onFocus={() => setAbierto(true)}
+        onKeyDown={manejarTecla}
+        placeholder="Escribí tu barrio o localidad"
+        role="combobox"
+        aria-label="Barrio o localidad"
+        aria-expanded={abierto}
+        aria-controls="opciones-barrio"
+        aria-autocomplete="list"
+        aria-invalid={invalido || undefined}
+        className="f-body w-full min-h-[52px] pl-11 pr-11 py-3 rounded-xl text-sm outline-none"
+        style={{ background: c.surface, border: `1px solid ${invalido ? c.danger : c.border}`, color: consulta ? c.text : c.textFaint }}
+      />
+      {consulta && <button type="button" onClick={() => { setConsulta(""); setAbierto(true); setIndiceActivo(0); onChange(""); }} className="absolute right-3 top-3.5 w-7 h-7 rounded-full flex items-center justify-center" style={{ background: c.surfaceAlt }} aria-label="Limpiar barrio"><X size={13} color={c.textMuted} /></button>}
+      {abierto && <div id="opciones-barrio" role="listbox" className="absolute z-30 left-0 right-0 mt-1.5 max-h-64 overflow-y-auto rounded-2xl p-1.5 shadow-xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        {opciones.length ? opciones.map((zona, indice) => <button key={zona.barrio} type="button" role="option" aria-selected={valor === zona.barrio} onMouseDown={evento => evento.preventDefault()} onClick={() => elegir(zona.barrio)} className="f-body w-full flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs" style={{ background: indice === indiceActivo || valor === zona.barrio ? `${color}12` : "transparent", color: valor === zona.barrio ? color : c.text }}><MapPin size={14} color={valor === zona.barrio ? color : c.textFaint} className="mt-0.5 shrink-0" /><span>{zona.barrio}</span></button>) : <p className="f-body px-3 py-4 text-center text-xs" style={{ color: c.textFaint }}>No encontramos un barrio con ese nombre.</p>}
+      </div>}
+    </div>
+  );
+}
+
 /* ---------------------------------- VIDRIERA (CLIENTE) ---------------------------------- */
 function ClientePortal({ onAccesoInterno, modo, setModo }) {
   const c = useTheme();
@@ -596,6 +677,7 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
   const [enviando, setEnviando] = useState(false);
   const [disponibilidad, setDisponibilidad] = useState([]);
   const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
+  const [intentoRevision, setIntentoRevision] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -640,6 +722,16 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
   const camionAsignado = useMemo(() => { const z = zonas.find(x => x.barrio === form.barrio); return z ? { id: z.camionId, nombre: z.nombre, color: z.color } : null; }, [form.barrio, zonas]);
   const fechaElegida = disponibilidad.find(d => d.fecha === form.fechaEntrega);
   const horarioElegido = fechaElegida?.horarios.find(h => h.id === Number(form.horarioZonaId));
+  const requisitosEntrega = [
+    { id: "nombre", label: "nombre y apellido", incompleto: !form.nombre.trim() },
+    { id: "telefono", label: "teléfono", incompleto: !form.telefono.trim() },
+    { id: "calle", label: "calle y altura", incompleto: !form.calle.trim() },
+    { id: "barrio", label: "barrio o localidad", incompleto: !form.barrio },
+    { id: "fechaEntrega", label: "día de entrega", incompleto: !form.fechaEntrega },
+    { id: "horarioZonaId", label: "franja horaria", incompleto: !form.horarioZonaId },
+  ];
+  const faltantesEntrega = requisitosEntrega.filter(requisito => requisito.incompleto);
+  const campoInvalido = id => intentoRevision && faltantesEntrega.some(requisito => requisito.id === id);
   const setQty = (id, delta) => setCant(prev => ({ ...prev, [id]: Math.max(0, (prev[id] || 0) + delta) }));
   const elegirVariante = (producto, variante) => {
     const yaElegida = variantesElegidas[producto.id] === variante.id;
@@ -666,6 +758,21 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
     setProductosAbiertos({});
     setForm(prev => ({ ...prev, tipo: TIPO_DESTINO_POR_SEGMENTO[op.id] || "casa" }));
     setStep(1);
+  };
+
+  const cambiarBarrio = barrio => setForm(prev => ({ ...prev, barrio, fechaEntrega: "", horarioZonaId: "" }));
+  const elegirFechaEntrega = dia => {
+    const unicoHorario = dia.horarios?.length === 1 ? dia.horarios[0].id : "";
+    setForm(prev => ({ ...prev, fechaEntrega: dia.fecha, horarioZonaId: unicoHorario }));
+  };
+  const revisarPedido = () => {
+    setIntentoRevision(true);
+    if (faltantesEntrega.length) {
+      requestAnimationFrame(() => document.getElementById("datos-faltantes")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+      return;
+    }
+    setIntentoRevision(false);
+    setStep(3);
   };
 
   const confirmar = async () => {
@@ -801,15 +908,15 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
                 <h2 className="f-display text-2xl font-bold" style={{ color: c.text }}>Datos de entrega</h2>
                 <p className="f-body text-sm mt-1 mb-5" style={{ color: c.textMuted }}>Completá dónde y cuándo querés recibirlo.</p>
                 <div className="rounded-[22px] p-4 sm:p-5 space-y-3.5 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-                  <Input name="name" autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} className="min-h-[52px]" />
-                  <Input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} className="min-h-[52px]" />
-                  <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} className="min-h-[52px]" />
-                  <select name="address-level3" autoComplete="address-level3" value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full min-h-[52px] px-4 py-3 rounded-xl text-sm outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}><option value="">Barrio (define tu zona de reparto)</option>{zonas.map(z => <option key={z.barrio} value={z.barrio}>{z.barrio}</option>)}</select>
+                  <Input name="name" autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} aria-invalid={campoInvalido("nombre") || undefined} className="min-h-[52px]" style={campoInvalido("nombre") ? { border: `1px solid ${c.danger}` } : {}} />
+                  <Input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} aria-invalid={campoInvalido("telefono") || undefined} className="min-h-[52px]" style={campoInvalido("telefono") ? { border: `1px solid ${c.danger}` } : {}} />
+                  <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} aria-invalid={campoInvalido("calle") || undefined} className="min-h-[52px]" style={campoInvalido("calle") ? { border: `1px solid ${c.danger}` } : {}} />
+                  <SelectorBarrio zonas={zonas} valor={form.barrio} onChange={cambiarBarrio} color={azulCliente} invalido={campoInvalido("barrio")} />
                 </div>
                 {form.barrio && <div className="mt-4 rounded-[22px] p-4 sm:p-5 space-y-4 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
                   <div className="flex items-start gap-3"><div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: azulSuave }}><CalendarClock size={19} color={azulCliente} /></div><div><p className="f-body text-sm font-semibold" style={{ color: c.text }}>Elegí el día de entrega</p><p className="f-body text-xs mt-0.5" style={{ color: c.textFaint }}>Fechas disponibles para {form.barrio}.</p></div></div>
-                  {cargandoDisponibilidad ? <div className="flex items-center gap-2 py-2"><Spinner size={14} /><span className="f-body text-xs" style={{ color: c.textFaint }}>Buscando próximos turnos...</span></div> : disponibilidad.length > 0 ? <div className="flex gap-2 overflow-x-auto pb-1">{disponibilidad.slice(0, 10).map(d => <button key={d.fecha} onClick={() => setForm({ ...form, fechaEntrega: d.fecha, horarioZonaId: "" })} className="f-body shrink-0 rounded-2xl px-4 py-3 text-left" style={{ background: form.fechaEntrega === d.fecha ? azulSuave : c.surfaceAlt, border: `1px solid ${form.fechaEntrega === d.fecha ? azulCliente : c.border}` }}><span className="block text-sm font-semibold capitalize" style={{ color: form.fechaEntrega === d.fecha ? azulCliente : c.text }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", weekday: "short", day: "numeric" })}</span><span className="block text-[11px] mt-0.5 capitalize" style={{ color: c.textFaint }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", month: "short" })}</span></button>)}</div> : <p className="f-body text-xs px-3 py-2 rounded-xl" style={{ color: c.amber, background: c.amberSoft }}>No hay turnos disponibles para este barrio. Escribinos para coordinar.</p>}
-                  {fechaElegida && <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>Franja horaria aproximada</p><div className="grid gap-2">{fechaElegida.horarios.map(h => <button key={h.id} onClick={() => setForm({ ...form, horarioZonaId: h.id })} className="f-body w-full px-4 py-3 rounded-xl text-sm text-left" style={{ background: Number(form.horarioZonaId) === h.id ? azulSuave : c.surfaceAlt, border: `1px solid ${Number(form.horarioZonaId) === h.id ? azulCliente : c.border}`, color: Number(form.horarioZonaId) === h.id ? azulCliente : c.text }}>{formatearFranja(h.horaDesde, h.horaHasta)}{h.cupoDisponible <= 2 ? ` · ${h.cupoDisponible} cupo${h.cupoDisponible === 1 ? "" : "s"}` : ""}</button>)}</div><p className="f-body text-[11px] mt-2" style={{ color: c.textFaint }}>La hora es aproximada: el chofer organiza el recorrido dentro de esta franja.</p></div>}
+                  {cargandoDisponibilidad ? <div className="flex items-center gap-2 py-2"><Spinner size={14} /><span className="f-body text-xs" style={{ color: c.textFaint }}>Buscando próximos turnos...</span></div> : disponibilidad.length > 0 ? <div className="flex gap-2 overflow-x-auto pb-1">{disponibilidad.slice(0, 10).map(d => <button key={d.fecha} onClick={() => elegirFechaEntrega(d)} className="f-body shrink-0 rounded-2xl px-4 py-3 text-left" style={{ background: form.fechaEntrega === d.fecha ? azulSuave : c.surfaceAlt, border: `1px solid ${form.fechaEntrega === d.fecha ? azulCliente : (campoInvalido("fechaEntrega") ? c.danger : c.border)}` }}><span className="block text-sm font-semibold capitalize" style={{ color: form.fechaEntrega === d.fecha ? azulCliente : c.text }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", weekday: "short", day: "numeric" })}</span><span className="block text-[11px] mt-0.5 capitalize" style={{ color: c.textFaint }}>{new Date(`${d.fecha}T00:00:00Z`).toLocaleDateString("es-AR", { timeZone: "UTC", month: "short" })}</span></button>)}</div> : <p className="f-body text-xs px-3 py-2 rounded-xl" style={{ color: c.amber, background: c.amberSoft }}>No hay turnos disponibles para este barrio. Escribinos para coordinar.</p>}
+                  {fechaElegida && <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>Franja horaria aproximada</p><div className="grid gap-2">{fechaElegida.horarios.map(h => <button key={h.id} onClick={() => setForm({ ...form, horarioZonaId: h.id })} className="f-body w-full px-4 py-3 rounded-xl text-sm text-left" style={{ background: Number(form.horarioZonaId) === h.id ? azulSuave : c.surfaceAlt, border: `1px solid ${Number(form.horarioZonaId) === h.id ? azulCliente : (campoInvalido("horarioZonaId") ? c.danger : c.border)}`, color: Number(form.horarioZonaId) === h.id ? azulCliente : c.text }}>{formatearFranja(h.horaDesde, h.horaHasta)}{h.cupoDisponible <= 2 ? ` · ${h.cupoDisponible} cupo${h.cupoDisponible === 1 ? "" : "s"}` : ""}</button>)}</div>{fechaElegida.horarios.length === 1 && form.horarioZonaId && <p className="f-body text-[11px] mt-2" style={{ color: azulCliente }}>Seleccionamos automáticamente la única franja disponible.</p>}<p className="f-body text-[11px] mt-2" style={{ color: c.textFaint }}>La hora es aproximada: el chofer organiza el recorrido dentro de esta franja.</p></div>}
                 </div>}
                 <div className="mt-4 rounded-[22px] p-4 sm:p-5 space-y-5 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
                   <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>Tipo de pedido</p><div className="f-body w-full px-4 py-3.5 rounded-xl text-sm flex items-center justify-between" style={{ background: c.surfaceAlt }}><span style={{ color: c.text }}>{segmento?.label || "—"}</span><span className="text-[11px]" style={{ color: c.textFaint }}>Elegido al inicio</span></div></div>
@@ -817,7 +924,8 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
                   {form.pago === "Transferencia" && <div className="rounded-2xl p-4 space-y-3" style={{ background: azulSuave, border: `1px solid ${azulCliente}55` }}><div className="flex items-center gap-2"><Landmark size={18} color={azulCliente} /><p className="f-body text-sm font-semibold" style={{ color: c.text }}>Datos para transferir</p></div><div className="flex items-center justify-between gap-4 rounded-xl p-3.5" style={{ background: c.surface }}><div><p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Total exacto</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>Podés pagarlo ahora o después.</p></div><span className="f-display text-xl font-bold whitespace-nowrap" style={{ color: azulCliente }}>${totalPrecio.toLocaleString("es-AR")}</span></div>{datosTransferencia.configurados ? <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">{datosTransferencia.titular && <div><span className="block" style={{ color: c.textFaint }}>Titular</span><span style={{ color: c.text }}>{datosTransferencia.titular}</span></div>}{datosTransferencia.banco && <div><span className="block" style={{ color: c.textFaint }}>Banco</span><span style={{ color: c.text }}>{datosTransferencia.banco}</span></div>}{datosTransferencia.alias && <div><span className="block" style={{ color: c.textFaint }}>Alias</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.alias}</span></div>}{datosTransferencia.cbu && <div><span className="block" style={{ color: c.textFaint }}>CBU/CVU</span><span className="f-mono break-all" style={{ color: c.text }}>{datosTransferencia.cbu}</span></div>}{datosTransferencia.cuit && <div><span className="block" style={{ color: c.textFaint }}>CUIT</span><span className="f-mono" style={{ color: c.text }}>{datosTransferencia.cuit}</span></div>}</div> : <p className="f-body text-xs" style={{ color: c.amber }}>Los datos todavía no están publicados. Podés confirmar y coordinar la transferencia después.</p>}<label className="f-body flex items-center justify-center gap-2 w-full px-3 py-3 rounded-xl text-xs font-semibold cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobante ? c.success : azulCliente}`, color: comprobante ? c.success : azulCliente }}>{comprobante ? <FileCheck2 size={16} /> : <Upload size={16} />}<span className="truncate">{comprobante ? comprobante.name : "Subir captura del pago (opcional)"}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={e => setComprobante(e.target.files?.[0] || null)} /></label></div>}
                   <div><p className="f-body text-xs font-medium mb-2" style={{ color: c.textMuted }}>Notas para la entrega <span style={{ color: c.textFaint }}>(opcional)</span></p><textarea value={form.notas} maxLength={500} onChange={e => setForm({ ...form, notas: e.target.value })} rows={3} placeholder="Ej.: tocar timbre 2, portón negro, llamar antes de llegar..." className="f-body w-full px-4 py-3 rounded-xl text-sm outline-none resize-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /><p className="f-body text-[10px] text-right mt-1" style={{ color: c.textFaint }}>{form.notas.length}/500</p></div>
                 </div>
-                <button disabled={!form.nombre || !form.telefono || !form.barrio || !form.calle || !form.fechaEntrega || !form.horarioZonaId} onClick={() => setStep(3)} className="f-body w-full mt-5 py-4 rounded-2xl text-sm font-semibold disabled:opacity-40" style={botonPrincipal}>Revisar pedido</button>
+                {intentoRevision && faltantesEntrega.length > 0 && <div id="datos-faltantes" role="alert" className="mt-4 flex items-start gap-3 rounded-2xl p-4" style={{ background: c.dangerSoft, border: `1px solid ${c.danger}55` }}><AlertCircle size={18} color={c.danger} className="mt-0.5 shrink-0" /><div><p className="f-body text-sm font-semibold" style={{ color: c.danger }}>Falta completar:</p><p className="f-body text-xs mt-1 leading-relaxed" style={{ color: c.text }}>{faltantesEntrega.map(requisito => requisito.label).join(", ")}.</p></div></div>}
+                <button onClick={revisarPedido} className="f-body w-full mt-5 py-4 rounded-2xl text-sm font-semibold" style={botonPrincipal}>Revisar pedido</button>
               </section>
             )}
 
@@ -1971,13 +2079,14 @@ function ListaProductos({ productos, esMayorista, onEditarPrecio, onToggleActivo
       {productos.map(p => (
         <div key={p.id} className="rounded-2xl p-3.5 flex flex-col gap-3" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: p.activo ? 1 : 0.5 }}>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3"><div className="flex items-center gap-3 flex-1 min-w-0">
-            <label className="group relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" style={{ background: c.accentSoft, border: `1px dashed ${c.accent}66` }} title="Elegir o reemplazar imagen">
-              {p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-cover" /> : <Package size={18} color={c.accent} />}
+            <label className="group relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0 overflow-hidden cursor-pointer" style={{ background: c.accentSoft, border: `1px dashed ${c.accent}66` }} title="Elegir o reemplazar imagen" aria-label={`Cambiar imagen de ${p.nombre}`}>
+              {p.imagenUrl ? <img src={p.imagenUrl} alt={p.nombre} className="w-full h-full object-contain p-0.5" /> : <Package size={18} color={c.accent} />}
               <span className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgba(2,8,23,.58)" }}><ImagePlus size={18} color="#fff" /></span>
+              <span className="absolute right-0.5 bottom-0.5 w-5 h-5 rounded-full flex items-center justify-center group-hover:opacity-0" style={{ background: c.accent, boxShadow: "0 2px 6px rgba(15,23,42,.25)" }}><ImagePlus size={11} color="#fff" /></span>
               {subiendoImagen === p.id && <span className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(2,8,23,.58)" }}><Spinner size={16} /></span>}
               <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={subiendoImagen === p.id} onChange={e => { const archivo = e.target.files?.[0]; if (archivo) onSubirImagen(p.id, archivo); e.target.value = ""; }} />
             </label>
-            <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-[11px]" style={{ color: c.textFaint }}>{p.descripcion || "—"}</p></div>
+            <div className="flex-1 min-w-0"><p className="f-body text-sm font-medium" style={{ color: c.text }}>{p.nombre}</p><p className="f-body text-[11px]" style={{ color: c.textFaint }}>{p.descripcion || "—"}</p><p className="f-body text-[10px] mt-0.5" style={{ color: c.accent }}>Tocá la imagen para cambiarla</p></div>
           </div>
           <div className="flex items-center gap-2 justify-between sm:justify-end shrink-0">
             <div className="flex items-center gap-1"><span className="f-mono text-xs" style={{ color: c.textFaint }}>$</span><input type="number" defaultValue={p.precio} onBlur={e => onEditarPrecio(p.id, e.target.value)} className="f-mono text-xs w-20 px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
@@ -2089,6 +2198,7 @@ function AdminCatalogo({ token }) {
   return (
     <div className="space-y-4">
       <p className="f-body text-xs" style={{ color: c.textMuted }}>Cada catálogo se ve por separado en la vidriera, según lo que el cliente elija al empezar su pedido.</p>
+      <div className="flex items-start gap-3 rounded-2xl p-3.5" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}><ImagePlus size={18} color={c.accent} className="mt-0.5 shrink-0" /><div><p className="f-body text-xs font-semibold" style={{ color: c.text }}>Imágenes de la portada</p><p className="f-body text-[11px] mt-1 leading-relaxed" style={{ color: c.textMuted }}>Las tarjetas del inicio se arman automáticamente con las fotos de los primeros productos activos de cada catálogo. Para cambiarlas, elegí el catálogo y tocá la foto del producto.</p></div></div>
       <div className="flex flex-wrap rounded-xl p-1 gap-1" style={{ background: c.surface, width: "fit-content" }}>
         {OPCIONES_SEGMENTO.map(op => (
           <button key={op.categoria} onClick={() => setTab(op.categoria)} className="f-body px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === op.categoria ? c.accentSoft : "transparent", color: tab === op.categoria ? c.accent : c.textMuted }}>
