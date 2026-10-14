@@ -546,23 +546,15 @@ function ProgresoPedido({ step, color }) {
   );
 }
 
-function VisualCategoria({ productos, Icon, color }) {
-  const c = useTheme();
-  const fotos = (productos || []).filter(producto => producto.imagenUrl).slice(0, 3);
-  if (!fotos.length) return (
+function VisualCategoria({ imagenUrl, nombre, Icon, color }) {
+  if (!imagenUrl) return (
     <div className="w-28 h-24 shrink-0 rounded-2xl flex items-center justify-center" style={{ background: `${color}10` }}>
       <Icon size={42} color={color} strokeWidth={1.5} />
     </div>
   );
   return (
-    <div className="relative w-28 h-24 shrink-0" aria-hidden="true">
-      {fotos.map((producto, indice) => {
-        const posiciones = fotos.length === 1
-          ? [{ left: 10, top: 0, width: 88, height: 92 }]
-          : [{ left: 24, top: 0, width: 72, height: 92 }, { left: 0, top: 30, width: 55, height: 62 }, { left: 72, top: 38, width: 48, height: 54 }];
-        return <img key={producto.id} src={producto.imagenUrl} alt="" loading="lazy" className="absolute object-contain drop-shadow-sm" style={posiciones[indice]} />;
-      })}
-      <div className="absolute inset-x-2 bottom-0 h-3 rounded-full blur-md opacity-30" style={{ background: c.textFaint }} />
+    <div className="w-28 h-24 shrink-0 flex items-center justify-center overflow-hidden" aria-hidden="true">
+      <img src={imagenUrl} alt={nombre || ""} loading="lazy" className="w-full h-full object-contain" />
     </div>
   );
 }
@@ -662,6 +654,7 @@ function SelectorBarrio({ zonas, valor, onChange, color, invalido }) {
 function ClientePortal({ onAccesoInterno, modo, setModo }) {
   const c = useTheme();
   const [productos, setProductos] = useState([]);
+  const [portadasCatalogo, setPortadasCatalogo] = useState([]);
   const [zonas, setZonas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -689,8 +682,9 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
   useEffect(() => {
     (async () => {
       try {
-        const [prods, zs, datosPago] = await Promise.all([api("/public/productos"), api("/public/zonas"), api("/public/configuracion-pago")]);
+        const [prods, portadas, zs, datosPago] = await Promise.all([api("/public/productos"), api("/public/portadas-catalogo"), api("/public/zonas"), api("/public/configuracion-pago")]);
         setProductos(prods);
+        setPortadasCatalogo(portadas);
         const zonasNormalizadas = zs.map(z => ({ barrio: z.barrio, camionId: z.camionId, nombre: z.camionNombre, color: colorDeCamion(z.camionId), diasEntrega: z.diasEntrega || [] }));
         setZonas(zonasNormalizadas);
         setForm(actual => actual.barrio && !zonasNormalizadas.some(z => z.barrio === actual.barrio) ? { ...actual, barrio: "", fechaEntrega: "", horarioZonaId: "" } : actual);
@@ -919,7 +913,7 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
                 <div className="space-y-3.5">
                   {OPCIONES_SEGMENTO.map(op => (
                     <button key={op.id} onClick={() => elegirSegmento(op)} className="f-body w-full min-h-[122px] flex items-center gap-3 rounded-[20px] px-3 sm:px-4 py-3 text-left transition-transform hover:-translate-y-0.5" style={{ background: c.surface, border: `1px solid ${modo === "dark" ? c.border : "#D7E5EE"}`, boxShadow: modo === "dark" ? "none" : "0 8px 22px rgba(15,23,42,.035)" }}>
-                      <VisualCategoria productos={productos.filter(producto => producto.categoria === op.categoria)} Icon={op.Icon} color={azulCliente} />
+                      <VisualCategoria imagenUrl={portadasCatalogo.find(portada => portada.categoria === op.categoria)?.imagenUrl} nombre={op.label} Icon={op.Icon} color={azulCliente} />
                       <div className="flex-1 min-w-0"><p className="text-base font-semibold leading-tight" style={{ color: c.text }}>{op.label}</p><p className="text-xs sm:text-sm mt-1 leading-snug" style={{ color: c.textMuted }}>{op.desc}</p></div>
                       <ChevronRight size={23} color={azulCliente} strokeWidth={1.8} className="shrink-0" />
                     </button>
@@ -2174,14 +2168,29 @@ function ListaProductos({ productos, esMayorista, onEditarPrecio, onToggleActivo
 function AdminCatalogo({ token }) {
   const c = useTheme();
   const [productos, setProductos] = useState([]);
+  const [portadas, setPortadas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [subiendoImagen, setSubiendoImagen] = useState(null);
+  const [subiendoPortada, setSubiendoPortada] = useState(false);
   const [tab, setTab] = useState("consumo_personal");
   const [nuevo, setNuevo] = useState({ nombre: "", precio: "", descripcion: "" });
 
-  const cargar = useCallback(() => api("/admin/productos", { token }).then(setProductos).catch(() => setError("No pudimos cargar el catálogo.")).finally(() => setCargando(false)), [token]);
+  const cargar = useCallback(async () => {
+    try {
+      const [listaProductos, listaPortadas] = await Promise.all([
+        api("/admin/productos", { token }),
+        api("/admin/portadas-catalogo", { token }),
+      ]);
+      setProductos(listaProductos);
+      setPortadas(listaPortadas);
+    } catch {
+      setError("No pudimos cargar el catálogo.");
+    } finally {
+      setCargando(false);
+    }
+  }, [token]);
   useEffect(() => { cargar(); }, [cargar]);
 
   const editarPrecio = async (id, precio) => {
@@ -2230,6 +2239,28 @@ function AdminCatalogo({ token }) {
       setMensaje("Imagen eliminada.");
     } catch (e) { setError(e.message || "No se pudo quitar la imagen."); }
   };
+  const subirPortada = async (archivo) => {
+    setSubiendoPortada(true); setError(""); setMensaje("");
+    try {
+      const body = new FormData();
+      body.append("imagen", archivo);
+      const actualizada = await api(`/admin/portadas-catalogo/${tab}/imagen`, { method: "PUT", token, body });
+      setPortadas(prev => [...prev.filter(portada => portada.categoria !== tab), actualizada]);
+      setMensaje(`Imagen de portada de ${OPCIONES_SEGMENTO.find(op => op.categoria === tab)?.label} actualizada.`);
+    } catch (e) { setError(e.message || "No se pudo subir la imagen de portada."); }
+    setSubiendoPortada(false);
+  };
+  const eliminarPortada = async () => {
+    const etiqueta = OPCIONES_SEGMENTO.find(op => op.categoria === tab)?.label || "este catálogo";
+    const confirmado = await confirmarAccion({ titulo: `¿Quitar la portada de ${etiqueta}?`, mensaje: "En la pantalla inicial se mostrará el ícono predeterminado. Las imágenes de los productos no cambiarán.", textoConfirmar: "Quitar portada", peligro: false });
+    if (!confirmado) return;
+    setError(""); setMensaje("");
+    try {
+      await api(`/admin/portadas-catalogo/${tab}/imagen`, { method: "DELETE", token });
+      setPortadas(prev => prev.filter(portada => portada.categoria !== tab));
+      setMensaje("Imagen de portada eliminada.");
+    } catch (e) { setError(e.message || "No se pudo quitar la imagen de portada."); }
+  };
   const crearVariante = async (productoId, datos) => {
     try {
       const variante = await api(`/admin/productos/${productoId}/variantes`, { method: "POST", token, body: datos });
@@ -2263,11 +2294,12 @@ function AdminCatalogo({ token }) {
   if (cargando) return <Cargando />;
   const delTab = productos.filter(p => p.categoria === tab);
   const catalogoActivo = OPCIONES_SEGMENTO.find(op => op.categoria === tab);
+  const portadaActiva = portadas.find(portada => portada.categoria === tab);
 
   return (
     <div className="space-y-4">
       <p className="f-body text-xs" style={{ color: c.textMuted }}>Cada catálogo se ve por separado en la vidriera, según lo que el cliente elija al empezar su pedido.</p>
-      <div className="flex items-start gap-3 rounded-2xl p-3.5" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}><ImagePlus size={18} color={c.accent} className="mt-0.5 shrink-0" /><div><p className="f-body text-xs font-semibold" style={{ color: c.text }}>Imágenes de la portada</p><p className="f-body text-[11px] mt-1 leading-relaxed" style={{ color: c.textMuted }}>Las tarjetas del inicio se arman automáticamente con las fotos de los primeros productos activos de cada catálogo. Para cambiarlas, elegí el catálogo y tocá la foto del producto.</p></div></div>
+      <div className="flex items-start gap-3 rounded-2xl p-3.5" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}><ImagePlus size={18} color={c.accent} className="mt-0.5 shrink-0" /><div><p className="f-body text-xs font-semibold" style={{ color: c.text }}>Imágenes de la portada</p><p className="f-body text-[11px] mt-1 leading-relaxed" style={{ color: c.textMuted }}>Cada catálogo tiene una imagen general independiente para la primera pantalla. Podés usar una composición PNG con fondo transparente; no se tomarán automáticamente las fotos de los productos.</p></div></div>
       <div className="flex flex-wrap rounded-xl p-1 gap-1" style={{ background: c.surface, width: "fit-content" }}>
         {OPCIONES_SEGMENTO.map(op => (
           <button key={op.categoria} onClick={() => setTab(op.categoria)} className="f-body px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1.5" style={{ background: tab === op.categoria ? c.accentSoft : "transparent", color: tab === op.categoria ? c.accent : c.textMuted }}>
@@ -2277,6 +2309,23 @@ function AdminCatalogo({ token }) {
       </div>
       <ErrorBanner mensaje={error} />
       {mensaje && <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: c.successSoft }}><CheckCircle2 size={14} color={c.success} /><span className="f-body text-xs" style={{ color: c.success }}>{mensaje}</span></div>}
+
+      <div className="rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <div className="w-32 h-28 rounded-2xl flex items-center justify-center overflow-hidden shrink-0" style={{ background: c.bgAlt, border: `1px dashed ${c.accent}66` }}>
+          {portadaActiva?.imagenUrl ? <img src={portadaActiva.imagenUrl} alt={`Portada de ${catalogoActivo?.label}`} className="w-full h-full object-contain" /> : catalogoActivo ? <catalogoActivo.Icon size={38} color={c.accent} strokeWidth={1.5} /> : null}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="f-body text-sm font-semibold" style={{ color: c.text }}>Imagen general de {catalogoActivo?.label}</p>
+          <p className="f-body text-[11px] mt-1 leading-relaxed" style={{ color: c.textMuted }}>Se muestra únicamente en la tarjeta del inicio. Recomendado: PNG transparente, formato horizontal o cuadrado, hasta 5 MB.</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <label className="f-body inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer" style={{ background: c.accent, color: c.bgAlt }}>
+              {subiendoPortada ? <Spinner size={14} /> : <Upload size={14} />} {portadaActiva ? "Reemplazar imagen" : "Cargar imagen"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={subiendoPortada} onChange={e => { const archivo = e.target.files?.[0]; if (archivo) subirPortada(archivo); e.target.value = ""; }} />
+            </label>
+            {portadaActiva && <button onClick={eliminarPortada} disabled={subiendoPortada} className="f-body inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium disabled:opacity-50" style={{ background: c.surfaceAlt, color: c.textMuted, border: `1px solid ${c.border}` }}><X size={14} /> Quitar portada</button>}
+          </div>
+        </div>
+      </div>
 
       <ListaProductos productos={delTab} esMayorista={tab === "comercio_reventa"} onEditarPrecio={editarPrecio} onToggleActivo={toggleActivo} onEliminar={eliminar} onSubirImagen={subirImagen} onEliminarImagen={eliminarImagen} subiendoImagen={subiendoImagen} onCrearVariante={crearVariante} onEditarVariante={editarVariante} onEliminarVariante={eliminarVariante} />
 
