@@ -24,9 +24,10 @@ export function crearReporteCajaPdf({ desde, hasta, cajas }) {
     ventas: acum.ventas + Number(caja.ventasTotal || 0),
     efectivo: acum.efectivo + Number(caja.efectivoCobrado || 0),
     transferencias: acum.transferencias + Number(caja.transferenciasCobradas || 0),
+    remitos: acum.remitos + Number(caja.remitosTotal || 0),
     extracciones: acum.extracciones + Number(caja.extraccionesTotal || 0),
     rendir: acum.rendir + Number(caja.efectivoEsperado || 0),
-  }), { ventas: 0, efectivo: 0, transferencias: 0, extracciones: 0, rendir: 0 });
+  }), { ventas: 0, efectivo: 0, transferencias: 0, remitos: 0, extracciones: 0, rendir: 0 });
 
   doc.setFillColor(13, 148, 136);
   doc.rect(0, 0, 297, 30, "F");
@@ -45,24 +46,25 @@ export function crearReporteCajaPdf({ desde, hasta, cajas }) {
     ["Ventas entregadas", moneda(total.ventas)],
     ["Efectivo cobrado", moneda(total.efectivo)],
     ["Transferencias", moneda(total.transferencias)],
+    ["Remitos", moneda(total.remitos)],
     ["Extracciones", moneda(total.extracciones)],
     ["Efectivo a rendir", moneda(total.rendir)],
   ];
   tarjetas.forEach(([titulo, valor], indice) => {
-    const x = 14 + indice * 54;
-    doc.setFillColor(indice === 4 ? 224 : 243, indice === 4 ? 247 : 246, indice === 4 ? 244 : 248);
-    doc.roundedRect(x, 36, 49, 19, 2, 2, "F");
+    const x = 14 + indice * 45;
+    doc.setFillColor(indice === 5 ? 224 : 243, indice === 5 ? 247 : 246, indice === 5 ? 244 : 248);
+    doc.roundedRect(x, 36, 41, 19, 2, 2, "F");
     doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(100, 116, 132); doc.text(titulo, x + 3, 42);
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 23, 42); doc.text(valor, x + 3, 50);
   });
 
   autoTable(doc, {
     startY: 62,
-    head: [["Fecha", "Camión / chofer", "Estado", "Entregas", "Ventas", "Efectivo", "Transferencias", "Extracciones", "A rendir", "Declarado", "Diferencia"]],
+    head: [["Fecha", "Camión / chofer", "Estado", "Entregas", "Ventas", "Efectivo", "Transferencias", "Remitos", "Extracciones", "A rendir", "Declarado", "Diferencia"]],
     body: cajas.map(caja => [
       fechaAr(caja.fecha), `${caja.camion.nombre}${caja.choferNombre ? `\n${caja.choferNombre}` : ""}`, caja.cerrado ? "Cerrada" : "Abierta",
       String(caja.pedidosEntregados || 0), moneda(caja.ventasTotal), moneda(caja.efectivoCobrado), moneda(caja.transferenciasCobradas),
-      moneda(caja.extraccionesTotal), moneda(caja.efectivoEsperado), caja.efectivoDeclarado == null ? "-" : moneda(caja.efectivoDeclarado), caja.diferencia == null ? "-" : moneda(caja.diferencia),
+      moneda(caja.remitosTotal), moneda(caja.extraccionesTotal), moneda(caja.efectivoEsperado), caja.efectivoDeclarado == null ? "-" : moneda(caja.efectivoDeclarado), caja.diferencia == null ? "-" : moneda(caja.diferencia),
     ]),
     theme: "grid",
     styles: { font: "helvetica", fontSize: 7.5, cellPadding: 2, textColor: [51, 65, 85], lineColor: [220, 227, 232], lineWidth: 0.2 },

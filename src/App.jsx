@@ -6,7 +6,7 @@ import {
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
   Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
-  ImagePlus, Upload, Eye, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download, ChevronDown
+  ImagePlus, Upload, Eye, EyeOff, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download, ChevronDown
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -19,7 +19,7 @@ const AUTH_SESSION_KEY = "lahilda:sesion";
 const CLIENTE_DATA_KEY = "lahilda:datos-cliente";
 let ultimoErrorGlobal = { mensaje: "", momento: 0 };
 
-const FORM_CLIENTE_VACIO = { nombre: "", telefono: "", barrio: "", calle: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" };
+const FORM_CLIENTE_VACIO = { nombre: "", telefono: "", barrio: "", calle: "", detalleDireccion: "", tipo: "casa", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" };
 function leerDatosClienteGuardados() {
   if (typeof window === "undefined") return {};
   try {
@@ -29,6 +29,7 @@ function leerDatosClienteGuardados() {
       telefono: typeof datos.telefono === "string" ? datos.telefono : "",
       barrio: typeof datos.barrio === "string" ? datos.barrio : "",
       calle: typeof datos.calle === "string" ? datos.calle : "",
+      detalleDireccion: typeof datos.detalleDireccion === "string" ? datos.detalleDireccion : "",
       pago: PAGOS?.includes(datos.pago) ? datos.pago : "Efectivo",
     };
   } catch { return {}; }
@@ -43,6 +44,7 @@ function guardarDatosCliente(form) {
       telefono: form.telefono.trim(),
       barrio: form.barrio,
       calle: form.calle.trim(),
+      detalleDireccion: form.detalleDireccion.trim(),
       pago: form.pago,
     }));
   } catch {}
@@ -227,6 +229,7 @@ const fonts = (
 );
 
 const PAGOS = ["Efectivo", "Transferencia"];
+const COBROS_CHOFER = ["Efectivo", "Transferencia", "Remito"];
 const DIAS_SEMANA = [
   { id: 1, label: "Lunes", corto: "Lun" },
   { id: 2, label: "Martes", corto: "Mar" },
@@ -399,12 +402,12 @@ function ComprobanteModal({ url, onClose }) {
   if (!url) return null;
   return (
     <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }} className="modal-backdrop-in fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 1002, background: "rgba(2, 8, 23, 0.82)", backdropFilter: "blur(6px)" }}>
-      <div role="dialog" aria-modal="true" aria-label="Comprobante de transferencia" className="modal-card-in relative w-full max-w-2xl rounded-2xl p-3 shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+      <div role="dialog" aria-modal="true" aria-label="Comprobante de pago o remito" className="modal-card-in relative w-full max-w-2xl rounded-2xl p-3 shadow-2xl" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
         <div className="flex items-center justify-between px-2 pb-3">
-          <div className="flex items-center gap-2"><FileCheck2 size={18} color={c.accent} /><span className="f-display text-base font-semibold" style={{ color: c.text }}>Comprobante de transferencia</span></div>
+          <div className="flex items-center gap-2"><FileCheck2 size={18} color={c.accent} /><span className="f-display text-base font-semibold" style={{ color: c.text }}>Comprobante de pago / remito</span></div>
           <button onClick={onClose} className="p-2 rounded-xl" style={{ background: c.surfaceAlt }} aria-label="Cerrar"><X size={17} color={c.textMuted} /></button>
         </div>
-        <img src={url} alt="Comprobante de transferencia" className="block w-full max-h-[75vh] object-contain rounded-xl" style={{ background: c.bg }} />
+        <img src={url} alt="Comprobante de pago o remito" className="block w-full max-h-[75vh] object-contain rounded-xl" style={{ background: c.bg }} />
       </div>
     </div>
   );
@@ -426,7 +429,11 @@ function CamionChip({ camion, small }) {
 }
 function Input(props) {
   const c = useTheme();
-  return <input {...props} className={`f-body w-full px-3.5 py-2.5 rounded-xl text-sm outline-none ${props.className || ""}`} style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text, ...(props.style || {}) }} />;
+  const [visible, setVisible] = useState(false);
+  const esPassword = props.type === "password";
+  const input = <input {...props} type={esPassword && visible ? "text" : props.type} className={`f-body w-full px-3.5 py-2.5 ${esPassword ? "pr-11" : ""} rounded-xl text-sm outline-none ${props.className || ""}`} style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text, ...(props.style || {}) }} />;
+  if (!esPassword) return input;
+  return <div className="relative w-full">{input}<button type="button" onClick={() => setVisible(actual => !actual)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg" aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"} title={visible ? "Ocultar contraseña" : "Mostrar contraseña"}>{visible ? <EyeOff size={16} color={c.textMuted} /> : <Eye size={16} color={c.textMuted} />}</button></div>;
 }
 function Select({ children, ...props }) {
   const c = useTheme();
@@ -840,7 +847,7 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
     setEnviando(true); setError("");
     try {
       const items = Object.entries(cant).filter(([, q]) => q > 0).map(([id, q]) => ({ productoId: Number(id), cantidad: q, ...(variantesElegidas[id] ? { varianteId: variantesElegidas[id] } : {}) }));
-      const pedido = { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, notas: form.notas, fechaEntrega: form.fechaEntrega, horarioZonaId: Number(form.horarioZonaId), items };
+      const pedido = { nombre: form.nombre, telefono: form.telefono, barrio: form.barrio, calle: form.calle, detalleDireccion: form.detalleDireccion, tipo: form.tipo, segmento: segmento?.categoria || "consumo_personal", pago: form.pago, notas: form.notas, fechaEntrega: form.fechaEntrega, horarioZonaId: Number(form.horarioZonaId), items };
       let body = pedido;
       if (form.pago === "Transferencia" && comprobante) {
         const multipart = new FormData();
@@ -889,7 +896,7 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
             <h1 className="f-display text-3xl sm:text-4xl font-bold mb-3" style={{ color: c.text }}>¡Listo, {form.nombre.split(" ")[0]}!</h1>
             <p className="f-body text-sm leading-relaxed mb-8 max-w-sm mx-auto" style={{ color: c.textMuted }}>Tu pedido quedó confirmado. Te avisaremos por WhatsApp antes de que salga el reparto.</p>
             <div className="rounded-[22px] p-5 sm:p-6 text-left space-y-4 shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
-              <div className="flex items-start gap-3"><MapPin size={19} color={azulCliente} className="mt-0.5 shrink-0" /><div><p className="f-body text-[11px] uppercase tracking-wide" style={{ color: c.textFaint }}>Entrega</p><p className="f-body text-sm font-medium" style={{ color: c.text }}>{form.calle}, {form.barrio}</p></div></div>
+              <div className="flex items-start gap-3"><MapPin size={19} color={azulCliente} className="mt-0.5 shrink-0" /><div><p className="f-body text-[11px] uppercase tracking-wide" style={{ color: c.textFaint }}>Entrega</p><p className="f-body text-sm font-medium" style={{ color: c.text }}>{form.calle}{form.detalleDireccion ? ` · ${form.detalleDireccion}` : ""}, {form.barrio}</p></div></div>
               <div className="flex items-start gap-3"><CalendarClock size={19} color={azulCliente} className="mt-0.5 shrink-0" /><div><p className="f-body text-[11px] uppercase tracking-wide" style={{ color: c.textFaint }}>Día y horario</p><p className="f-body text-sm font-medium" style={{ color: c.text }}>{formatearFechaEntrega(confirmado.fechaEntrega)}</p><p className="f-body text-xs mt-0.5" style={{ color: c.textMuted }}>{formatearFranja(confirmado.horaDesde, confirmado.horaHasta)}</p></div></div>
               <div className="h-px" style={{ background: c.border }} />
               <div className="flex justify-between items-center"><span className="f-display text-base font-semibold" style={{ color: c.text }}>Total</span><span className="f-display text-xl font-bold" style={{ color: azulCliente }}>${Number(confirmado.total).toLocaleString("es-AR")}</span></div>
@@ -972,6 +979,7 @@ function ClientePortal({ onAccesoInterno, modo, setModo }) {
                   <Input name="name" autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} aria-invalid={campoInvalido("nombre") || undefined} className="min-h-[52px]" style={campoInvalido("nombre") ? { border: `1px solid ${c.danger}` } : {}} />
                   <Input name="tel" type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} aria-invalid={campoInvalido("telefono") || undefined} className="min-h-[52px]" style={campoInvalido("telefono") ? { border: `1px solid ${c.danger}` } : {}} />
                   <Input name="street-address" autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => cambiarCalle(e.target.value)} onBlur={e => detectarBarrioDesdeCalle(e.target.value)} aria-invalid={campoInvalido("calle") || undefined} className="min-h-[52px]" style={campoInvalido("calle") ? { border: `1px solid ${c.danger}` } : {}} />
+                  <Input name="address-line2" autoComplete="address-line2" placeholder="Piso / Departamento / Condominio (opcional)" maxLength={120} value={form.detalleDireccion} onChange={e => setForm({ ...form, detalleDireccion: e.target.value })} className="min-h-[52px]" />
                   {detectandoBarrio && <div role="status" className="f-body flex items-center gap-2 px-1 text-xs" style={{ color: azulCliente }}><Spinner size={13} /> Buscando el barrio de esta dirección...</div>}
                   {!detectandoBarrio && avisoBarrio && <div role="status" className="f-body flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs" style={{ background: avisoBarrio.tipo === "ok" ? c.successSoft : c.amberSoft, color: avisoBarrio.tipo === "ok" ? c.success : c.amber }}><span className="mt-0.5 shrink-0">{avisoBarrio.tipo === "ok" ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}</span><span>{avisoBarrio.texto}</span></div>}
                   <SelectorBarrio zonas={zonas} valor={form.barrio} onChange={cambiarBarrio} color={azulCliente} invalido={campoInvalido("barrio")} />
@@ -1295,7 +1303,7 @@ function CajaChofer({ session, dia, pedidos }) {
           <ResumenCajaDato label="Ventas entregadas" valor={moneda(caja.ventasTotal)} color={c.text} fondo={c.surfaceAlt} />
           <ResumenCajaDato label="Efectivo cobrado" valor={moneda(caja.efectivoCobrado)} color={c.success} fondo={c.successSoft} />
           <ResumenCajaDato label="Transferencias" valor={moneda(caja.transferenciasCobradas)} color={c.accent} fondo={c.accentSoft} />
-          <ResumenCajaDato label="Pendiente de cobro" valor={moneda(caja.pendienteCobro)} color={caja.pendienteCobro ? c.amber : c.text} fondo={caja.pendienteCobro ? c.amberSoft : c.surfaceAlt} />
+          <ResumenCajaDato label="Remitos" valor={moneda(caja.remitosTotal)} color={caja.remitosTotal ? c.amber : c.text} fondo={caja.remitosTotal ? c.amberSoft : c.surfaceAlt} />
         </div>
         <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Productos entregados</p>{caja.productos.length ? <div className="space-y-1.5">{caja.productos.map(producto => <div key={producto.nombre} className="flex justify-between text-xs"><span className="f-body" style={{ color: c.textMuted }}>{producto.nombre}</span><span className="f-mono" style={{ color: c.text }}>{producto.cantidad} un.</span></div>)}</div> : <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Todavía no hay entregas registradas.</p>}</div>
         <div className="mb-4 pt-3" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
@@ -1402,12 +1410,14 @@ function ChoferPanel({ session, onLogout }) {
   };
 
   const registrarCobro = async (pedido) => {
-    if (!metodoCobro) return mostrarErrorGlobal("Elegí Efectivo o Transferencia.");
+    if (!metodoCobro) return mostrarErrorGlobal("Elegí Efectivo, Transferencia o Remito.");
+    const comprobanteExistenteValido = pedido.tieneComprobante && (metodoCobro === "Transferencia" || pedido.pagoConfirmado === "Remito");
+    if (["Transferencia", "Remito"].includes(metodoCobro) && !comprobanteCobro && !comprobanteExistenteValido) return mostrarErrorGlobal(`Subí el comprobante de ${metodoCobro.toLowerCase()} antes de confirmar.`);
     setGuardandoCobro(true);
     try {
       const form = new FormData();
       form.append("pagoConfirmado", metodoCobro);
-      if (metodoCobro === "Transferencia" && comprobanteCobro) form.append("comprobante", comprobanteCobro);
+      if (["Transferencia", "Remito"].includes(metodoCobro) && comprobanteCobro) form.append("comprobante", comprobanteCobro);
       const actualizado = await api(`/chofer/pedidos/${pedido.id}/cobro`, { method: "PATCH", token: session.token, body: form });
       setPedidos(prev => prev.map(o => o.id === pedido.id ? { ...o, ...actualizado } : o));
       cerrarCobro();
@@ -1469,13 +1479,14 @@ function ChoferPanel({ session, onLogout }) {
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-start gap-2.5">
                       <span className="f-mono text-[11px] font-medium shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5" style={{ background: `${camionColor}22`, color: camionColor }}>{o.parada}</span>
-                      <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>{o.cliente}</p><p className="f-body text-xs flex items-center gap-1 mt-0.5" style={{ color: c.textFaint }}><MapPin size={11} /> {o.direccion}</p>{o.horaDesde && <p className="f-body text-[11px] flex items-center gap-1 mt-1" style={{ color: c.accent }}><Clock size={11} /> {formatearFranja(o.horaDesde, o.horaHasta)}</p>}</div>
+                      <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>{o.cliente}</p><p className="f-body text-xs flex items-center gap-1 mt-0.5" style={{ color: c.textFaint }}><MapPin size={11} /> {o.direccion}{o.detalleDireccion ? ` · ${o.detalleDireccion}` : ""}</p>{o.horaDesde && <p className="f-body text-[11px] flex items-center gap-1 mt-1" style={{ color: c.accent }}><Clock size={11} /> {formatearFranja(o.horaDesde, o.horaHasta)}</p>}</div>
                     </div>
                     <EstadoBadge estado={o.estado} />
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 mb-3">
                     {(o.productos || []).map(p => <span key={p} className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>{p}</span>)}
                     <span className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>Declaró: {o.pago}</span>
+                    {o.pago === "Transferencia" && <span className="f-body text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: o.tieneComprobante ? c.successSoft : c.amberSoft, color: o.tieneComprobante ? c.success : c.amber }}>{o.tieneComprobante ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}{o.tieneComprobante ? "Comprobante cargado" : "Sin comprobante: cobrar y subir"}</span>}
                     {o.total != null && <span className="f-mono text-[11px] px-2 py-0.5 rounded-full ml-auto font-medium" style={{ background: c.accentSoft, color: c.accent }}>${Number(o.total).toLocaleString("es-AR")}</span>}
                   </div>
                   {o.estado === "entregado" && (
@@ -1496,12 +1507,11 @@ function ChoferPanel({ session, onLogout }) {
                     <div className="rounded-xl p-2.5" style={{ background: c.accentSoft }}>
                       <p className="f-body text-[11px] mb-2 font-medium" style={{ color: c.text }}>{o.estado === "pendiente" ? "Entrega y cobro" : "Registrar o actualizar cobro"}</p>
                       <div className="flex flex-wrap gap-1.5">
-                        {PAGOS.map(p => <button key={p} onClick={() => { setMetodoCobro(p); if (p !== "Transferencia") setComprobanteCobro(null); }} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium" style={{ background: metodoCobro === p ? c.accent : c.surface, color: metodoCobro === p ? c.bgAlt : c.accent, border: `1px solid ${c.accent}` }}>{p}</button>)}
+                        {COBROS_CHOFER.map(p => <button key={p} onClick={() => { setMetodoCobro(p); if (p === "Efectivo") setComprobanteCobro(null); }} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium" style={{ background: metodoCobro === p ? c.accent : c.surface, color: metodoCobro === p ? c.bgAlt : c.accent, border: `1px solid ${c.accent}` }}>{p}</button>)}
                       </div>
-                      {metodoCobro === "Transferencia" && <label className="f-body mt-2 flex items-center justify-center gap-2 w-full px-2.5 py-2 rounded-lg text-[11px] font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobanteCobro ? c.success : c.accent}`, color: comprobanteCobro ? c.success : c.accent }}><input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setComprobanteCobro(e.target.files?.[0] || null)} />{comprobanteCobro ? <FileCheck2 size={13} /> : <Upload size={13} />}<span className="truncate">{comprobanteCobro ? comprobanteCobro.name : (o.tieneComprobante ? "Reemplazar comprobante (opcional)" : "Subir comprobante (opcional)")}</span></label>}
+                      {["Transferencia", "Remito"].includes(metodoCobro) && <label className="f-body mt-2 flex items-center justify-center gap-2 w-full px-2.5 py-2 rounded-lg text-[11px] font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? c.success : c.accent}`, color: comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? c.success : c.accent }}><input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setComprobanteCobro(e.target.files?.[0] || null)} />{comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? <FileCheck2 size={13} /> : <Upload size={13} />}<span className="truncate">{comprobanteCobro ? comprobanteCobro.name : (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito") ? `Comprobante cargado · reemplazar ${metodoCobro.toLowerCase()}` : `Subir comprobante de ${metodoCobro.toLowerCase()} (obligatorio)`)}</span></label>}
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {metodoCobro && <button onClick={() => registrarCobro(o)} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium inline-flex items-center gap-1 disabled:opacity-60" style={{ background: c.success, color: c.bgAlt }}>{guardandoCobro ? <Spinner size={11} /> : <DollarSign size={11} />} {o.estado === "pendiente" ? "Confirmar entrega y cobro" : "Guardar cobro"}</button>}
-                        {o.estado === "pendiente" && <button onClick={() => marcar(o.id, "entregado")} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium" style={{ background: c.amberSoft, color: c.amber }}>Entregar sin cobrar</button>}
                         <button onClick={cerrarCobro} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg" style={{ color: c.textFaint }}>Cancelar</button>
                       </div>
                     </div>
@@ -1612,7 +1622,7 @@ function AdminNuevoPedido({ token, onClose, onCreado }) {
   const [cargando, setCargando] = useState(true);
   const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [form, setForm] = useState({ nombre: "", telefono: "", calle: "", barrio: "", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" });
+  const [form, setForm] = useState({ nombre: "", telefono: "", calle: "", detalleDireccion: "", barrio: "", pago: "Efectivo", notas: "", fechaEntrega: "", horarioZonaId: "" });
 
   useEffect(() => {
     let vigente = true;
@@ -1684,6 +1694,7 @@ function AdminNuevoPedido({ token, onClose, onCreado }) {
                   <Input autoComplete="name" placeholder="Nombre y apellido" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
                   <Input type="tel" inputMode="tel" autoComplete="tel" placeholder="Teléfono" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} />
                   <Input autoComplete="street-address" placeholder="Calle y altura" value={form.calle} onChange={e => setForm({ ...form, calle: e.target.value })} />
+                  <Input autoComplete="address-line2" placeholder="Piso / Departamento / Condominio (opcional)" maxLength={120} value={form.detalleDireccion} onChange={e => setForm({ ...form, detalleDireccion: e.target.value })} />
                   <select value={form.barrio} onChange={e => setForm({ ...form, barrio: e.target.value, fechaEntrega: "", horarioZonaId: "" })} className="f-body w-full px-3.5 py-2.5 rounded-xl text-sm outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: form.barrio ? c.text : c.textFaint }}><option value="">Barrio / localidad</option>{zonas.map(zona => <option key={zona.barrio} value={zona.barrio}>{zona.barrio} · {zona.camionNombre}</option>)}</select>
                 </div>
               </div>
@@ -1744,6 +1755,7 @@ function AdminPedidos({ token, camiones }) {
   const [fechaManual, setFechaManual] = useState("");
   const [notaAdmin, setNotaAdmin] = useState("");
   const [guardandoDetalle, setGuardandoDetalle] = useState(false);
+  const [eliminandoDetalle, setEliminandoDetalle] = useState(false);
   const [okDetalle, setOkDetalle] = useState("");
   const [nuevoPedidoAbierto, setNuevoPedidoAbierto] = useState(false);
   const [catalogo, setCatalogo] = useState([]);
@@ -1873,6 +1885,18 @@ function AdminPedidos({ token, camiones }) {
     } finally { setGuardandoDetalle(false); }
   };
 
+  const eliminarPedido = async () => {
+    if (!detalle) return;
+    const ok = await confirmarAccion({ titulo: `Eliminar pedido #${detalle.id}`, mensaje: "Se borrarán el pedido, sus productos y el comprobante asociado. Esta acción no se puede deshacer.", textoConfirmar: "Eliminar pedido" });
+    if (!ok) return;
+    setEliminandoDetalle(true);
+    try {
+      await api(`/admin/pedidos/${detalle.id}`, { method: "DELETE", token });
+      cerrarDetalle();
+      await cargar(false);
+    } finally { setEliminandoDetalle(false); }
+  };
+
   return (
     <div className="space-y-4">
       {nuevoPedidoAbierto && <AdminNuevoPedido token={token} onClose={() => setNuevoPedidoAbierto(false)} onCreado={() => { setFDia("todos"); setDesde(""); setHasta(""); cargar(false); }} />}
@@ -1885,14 +1909,14 @@ function AdminPedidos({ token, camiones }) {
                 <p className="f-body text-[11px] uppercase tracking-wider" style={{ color: c.accent }}>Ficha completa</p>
                 <h2 id="detalle-pedido-titulo" className="f-display text-xl md:text-2xl font-semibold mt-1" style={{ color: c.text }}>{detalle ? `Pedido #${detalle.id} · ${detalle.cliente}` : "Cargando pedido..."}</h2>
               </div>
-              <button onClick={cerrarDetalle} className="p-2.5 rounded-xl shrink-0" style={{ background: c.surfaceAlt }} aria-label="Cerrar detalle"><X size={18} color={c.textMuted} /></button>
+              <div className="flex items-center gap-2">{detalle && <button onClick={eliminarPedido} disabled={eliminandoDetalle} className="f-body inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-medium disabled:opacity-60" style={{ background: c.dangerSoft, color: c.danger }}>{eliminandoDetalle ? <Spinner size={14} /> : <Trash2 size={14} />} Eliminar</button>}<button onClick={cerrarDetalle} className="p-2.5 rounded-xl shrink-0" style={{ background: c.surfaceAlt }} aria-label="Cerrar detalle"><X size={18} color={c.textMuted} /></button></div>
             </div>
 
             {cargandoDetalle || !detalle ? <Cargando label="Cargando todos los datos..." /> : (
               <div className="p-5 md:p-7 space-y-6">
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Cliente</p><p className="f-body text-sm font-semibold" style={{ color: c.text }}>{detalle.cliente}</p><p className="f-mono text-xs mt-1" style={{ color: c.textMuted }}>{detalle.telefono}</p></div>
-                  <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Entrega</p><p className="f-body text-sm font-semibold" style={{ color: c.text }}>{detalle.direccion}</p><p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>{detalle.barrio}</p></div>
+                  <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Entrega</p><p className="f-body text-sm font-semibold" style={{ color: c.text }}>{detalle.direccion}</p>{detalle.detalleDireccion && <p className="f-body text-xs mt-1" style={{ color: c.text }}>{detalle.detalleDireccion}</p>}<p className="f-body text-xs mt-1" style={{ color: c.textMuted }}>{detalle.barrio}</p></div>
                   <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Camión y estado</p><div className="flex flex-wrap items-center gap-2"><CamionChip camion={detalle.camion} small /><EstadoBadge estado={detalle.estado} /></div></div>
                   <div className="rounded-2xl p-4" style={{ background: c.surfaceAlt }}><p className="f-body text-[11px] mb-1.5" style={{ color: c.textFaint }}>Pago y total</p><p className="f-body text-sm" style={{ color: detalle.pagoConfirmado ? c.success : (detalle.estado === "entregado" ? c.amber : c.text) }}>{detalle.pagoConfirmado ? `${detalle.pagoConfirmado} confirmado` : (detalle.estado === "entregado" ? `Pago pendiente · declaró ${detalle.pago}` : `Declaró ${detalle.pago}`)}</p><p className="f-mono text-base font-semibold mt-1" style={{ color: c.accent }}>${Number(detalle.total || 0).toLocaleString("es-AR")}</p></div>
                 </div>
@@ -1983,7 +2007,7 @@ function AdminPedidos({ token, camiones }) {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-start gap-3 min-w-0">
                           <span className="f-mono text-sm font-semibold shrink-0 w-9 h-9 rounded-full inline-flex items-center justify-center" style={{ background: `${cm.color}22`, color: cm.color }}>{o.parada}</span>
-                          <div className="min-w-0"><p className="f-display text-base font-semibold" style={{ color: c.text }}>{o.cliente}</p><p className="f-body text-xs flex items-start gap-1.5 mt-1" style={{ color: c.textMuted }}><MapPin size={13} className="shrink-0 mt-0.5" /> <span>{o.direccion} · {o.barrio}</span></p><p className="f-mono text-[11px] mt-1" style={{ color: c.textFaint }}>{o.telefono}</p></div>
+                          <div className="min-w-0"><p className="f-display text-base font-semibold" style={{ color: c.text }}>{o.cliente}</p><p className="f-body text-xs flex items-start gap-1.5 mt-1" style={{ color: c.textMuted }}><MapPin size={13} className="shrink-0 mt-0.5" /> <span>{o.direccion}{o.detalleDireccion ? ` · ${o.detalleDireccion}` : ""} · {o.barrio}</span></p><p className="f-mono text-[11px] mt-1" style={{ color: c.textFaint }}>{o.telefono}</p></div>
                         </div>
                         <EstadoBadge estado={o.estado} />
                       </div>
@@ -2031,6 +2055,8 @@ function AdminClientes({ token }) {
   const [error, setError] = useState("");
   const [comprobanteUrl, setComprobanteUrl] = useState("");
   const [abriendoComprobante, setAbriendoComprobante] = useState(null);
+  const [editandoCliente, setEditandoCliente] = useState(null);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
 
   const cerrarComprobante = useCallback(() => {
     setComprobanteUrl(actual => { if (actual) URL.revokeObjectURL(actual); return ""; });
@@ -2044,6 +2070,27 @@ function AdminClientes({ token }) {
       cerrarComprobante();
       setComprobanteUrl(URL.createObjectURL(blob));
     } finally { setAbriendoComprobante(null); }
+  };
+
+  const guardarCliente = async () => {
+    if (!editandoCliente) return;
+    setGuardandoCliente(true);
+    try {
+      await api(`/admin/clientes/${editandoCliente.id}`, { method: "PATCH", token, body: editandoCliente });
+      setEditandoCliente(null);
+      const params = new URLSearchParams({ orden });
+      if (q) params.set("q", q);
+      if (desde) params.set("desde", desde);
+      if (hasta) params.set("hasta", hasta);
+      setLista(await api(`/admin/clientes?${params.toString()}`, { token }));
+    } finally { setGuardandoCliente(false); }
+  };
+
+  const eliminarCliente = async cliente => {
+    const ok = await confirmarAccion({ titulo: `Eliminar a ${cliente.nombre}`, mensaje: `Se borrará su ficha y también ${cliente.cantidadPedidos} pedido${cliente.cantidadPedidos === 1 ? "" : "s"} asociado${cliente.cantidadPedidos === 1 ? "" : "s"}. Esta acción no se puede deshacer.`, textoConfirmar: "Eliminar cliente" });
+    if (!ok) return;
+    await api(`/admin/clientes/${cliente.id}`, { method: "DELETE", token });
+    setLista(actual => actual.filter(item => item.id !== cliente.id));
   };
 
   useEffect(() => {
@@ -2061,6 +2108,7 @@ function AdminClientes({ token }) {
   return (
     <div className="space-y-4">
       <ComprobanteModal url={comprobanteUrl} onClose={cerrarComprobante} />
+      {editandoCliente && <div role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setEditandoCliente(null); }} className="modal-backdrop-in fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 1001, background: "rgba(2, 8, 23, 0.76)", backdropFilter: "blur(6px)" }}><section role="dialog" aria-modal="true" aria-labelledby="editar-cliente-titulo" className="modal-card-in w-full max-w-xl rounded-3xl p-5 md:p-6" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div className="flex items-center justify-between gap-3 mb-5"><div><p className="f-body text-[11px] uppercase tracking-wider" style={{ color: c.accent }}>Base de clientes</p><h2 id="editar-cliente-titulo" className="f-display text-xl font-semibold mt-1" style={{ color: c.text }}>Editar cliente</h2></div><button onClick={() => setEditandoCliente(null)} className="p-2 rounded-xl" style={{ background: c.surfaceAlt }} aria-label="Cerrar"><X size={17} color={c.textMuted} /></button></div><div className="grid sm:grid-cols-2 gap-3"><Input placeholder="Nombre y apellido" value={editandoCliente.nombre} onChange={e => setEditandoCliente({ ...editandoCliente, nombre: e.target.value })} /><Input placeholder="Teléfono" value={editandoCliente.telefono} onChange={e => setEditandoCliente({ ...editandoCliente, telefono: e.target.value })} /><Input placeholder="Calle y altura" value={editandoCliente.calle || ""} onChange={e => setEditandoCliente({ ...editandoCliente, calle: e.target.value })} /><Input placeholder="Piso / Departamento / Condominio" maxLength={120} value={editandoCliente.detalleDireccion || ""} onChange={e => setEditandoCliente({ ...editandoCliente, detalleDireccion: e.target.value })} /><Input placeholder="Barrio / localidad" value={editandoCliente.barrio} onChange={e => setEditandoCliente({ ...editandoCliente, barrio: e.target.value })} /><Select value={editandoCliente.tipo} onChange={e => setEditandoCliente({ ...editandoCliente, tipo: e.target.value })}><option value="casa">Casa</option><option value="oficina">Oficina</option><option value="empresa">Empresa</option></Select><Select value={editandoCliente.pago} onChange={e => setEditandoCliente({ ...editandoCliente, pago: e.target.value })}><option value="Efectivo">Efectivo</option><option value="Transferencia">Transferencia</option></Select></div><p className="f-body text-[11px] mt-3" style={{ color: c.textFaint }}>Esto modifica la ficha de la base; los pedidos ya creados conservan sus datos propios.</p><div className="flex justify-end gap-2 mt-5"><button onClick={() => setEditandoCliente(null)} disabled={guardandoCliente} className="f-body px-4 py-2.5 rounded-xl text-xs" style={{ background: c.surfaceAlt, color: c.textMuted }}>Cancelar</button><button onClick={guardarCliente} disabled={guardandoCliente} className="f-body inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-60" style={{ background: c.accent, color: c.bgAlt }}>{guardandoCliente ? <Spinner size={13} /> : <Save size={13} />} Guardar</button></div></section></div>}
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-[160px]"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" color={c.textFaint} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre..." className="f-body w-full pl-8 pr-3 py-2 rounded-lg text-xs outline-none" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}`, color: c.text }} /></div>
         <button onClick={() => setOrden(orden === "desc" ? "asc" : "desc")} className="f-body flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted, border: `1px solid ${c.border}` }}><ArrowUpDown size={12} /> Consumo</button>
@@ -2074,7 +2122,7 @@ function AdminClientes({ token }) {
         <div className="rounded-2xl overflow-hidden" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
           <div className="overflow-x-auto">
             <table className="w-full f-body text-xs">
-              <thead><tr>{["Cliente", "Barrio", "Teléfono", "Tipo", "Pedidos", "Gasto total", "Último pedido", "Pago", "Nota camión (último pedido)"].map(h => <th key={h} className="text-left px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Cliente", "Barrio", "Teléfono", "Tipo", "Pedidos", "Gasto total", "Último pedido", "Pago", "Nota camión (último pedido)", "Acciones"].map(h => <th key={h} className="text-left px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{h}</th>)}</tr></thead>
               <tbody>
                 {lista.map(cl => (
                   <tr key={cl.id} style={{ borderTop: `1px solid ${c.borderSoft}` }}>
@@ -2087,9 +2135,10 @@ function AdminClientes({ token }) {
                     <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: c.textMuted }}>{cl.ultimoPedido ? new Date(cl.ultimoPedido).toLocaleDateString("es-AR") : "—"}</td>
                     <td className="px-4 py-2.5" style={{ color: c.textMuted }}><div className="flex items-center gap-2 whitespace-nowrap"><span style={{ color: cl.pagoConfirmado ? c.success : (cl.estadoUltimoPedido === "entregado" ? c.amber : c.textMuted) }}>{cl.pagoConfirmado ? `${cl.pagoConfirmado} confirmado` : (cl.estadoUltimoPedido === "entregado" ? "Pago pendiente" : cl.pago)}</span>{cl.tieneComprobante && <button onClick={() => abrirComprobante(cl.ultimoPedidoId)} disabled={abriendoComprobante === cl.ultimoPedidoId} className="f-body inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium disabled:opacity-60" style={{ background: c.accentSoft, color: c.accent }}>{abriendoComprobante === cl.ultimoPedidoId ? <Spinner size={11} /> : <Eye size={11} />} Ver comprobante</button>}</div></td>
                     <td className="px-4 py-2.5 min-w-[220px]" style={{ color: cl.notaCamion ? c.textMuted : c.textFaint }}><span className="line-clamp-2" title={cl.notaCamion || ""}>{cl.notaCamion || "Sin nota"}</span></td>
+                    <td className="px-4 py-2.5"><div className="flex items-center gap-1.5"><button onClick={() => setEditandoCliente({ ...cl, pago: cl.pagoDeclarado || "Efectivo" })} className="p-2 rounded-lg" style={{ background: c.accentSoft }} title="Editar cliente"><Pencil size={13} color={c.accent} /></button><button onClick={() => eliminarCliente(cl)} className="p-2 rounded-lg" style={{ background: c.dangerSoft }} title="Eliminar cliente"><Trash2 size={13} color={c.danger} /></button></div></td>
                   </tr>
                 ))}
-                {lista.length === 0 && <tr><td colSpan={9} className="text-center py-8" style={{ color: c.textFaint }}>Sin clientes que coincidan con la búsqueda.</td></tr>}
+                {lista.length === 0 && <tr><td colSpan={10} className="text-center py-8" style={{ color: c.textFaint }}>Sin clientes que coincidan con la búsqueda.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -2471,7 +2520,7 @@ function CamionCard({ cm, zonas, onGuardar, onEliminar, onAsignarZona, onQuitarZ
         <div className="space-y-1.5 mb-3 p-2.5 rounded-lg" style={{ background: c.surfaceAlt }}>
           <p className="f-body text-[11px] flex items-center gap-1" style={{ color: c.textFaint }}><KeyRound size={11} /> Acceso del chofer</p>
           <input value={choferUsuario} onChange={e => setChoferUsuario(e.target.value)} placeholder="Usuario" className="f-body w-full text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
-          <input value={choferPassword} onChange={e => setChoferPassword(e.target.value)} placeholder="Nueva contraseña (dejar vacío para no cambiarla)" type="password" className="f-body w-full text-xs px-2 py-1.5 rounded-lg outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+          <Input value={choferPassword} onChange={e => setChoferPassword(e.target.value)} placeholder="Nueva contraseña (dejar vacío para no cambiarla)" type="password" className="text-xs py-1.5" />
         </div>
       ) : (
         cm.chofer && <p className="f-mono text-[11px] mb-3 px-2.5 py-1.5 rounded-lg" style={{ background: c.surfaceAlt, color: c.textMuted }}>usuario: {cm.chofer.usuario}</p>
@@ -2868,9 +2917,9 @@ function AdminCajas({ token }) {
     cargar(false);
   };
   const totales = cajas.reduce((a, caja) => ({
-    efectivo: a.efectivo + Number(caja.efectivoCobrado || 0), transferencias: a.transferencias + Number(caja.transferenciasCobradas || 0),
-    extracciones: a.extracciones + Number(caja.extraccionesTotal || 0), rendir: a.rendir + Number(caja.efectivoEsperado || 0),
-  }), { efectivo: 0, transferencias: 0, extracciones: 0, rendir: 0 });
+    ventas: a.ventas + Number(caja.ventasTotal || 0), efectivo: a.efectivo + Number(caja.efectivoCobrado || 0), transferencias: a.transferencias + Number(caja.transferenciasCobradas || 0),
+    remitos: a.remitos + Number(caja.remitosTotal || 0), extracciones: a.extracciones + Number(caja.extraccionesTotal || 0), rendir: a.rendir + Number(caja.efectivoEsperado || 0),
+  }), { ventas: 0, efectivo: 0, transferencias: 0, remitos: 0, extracciones: 0, rendir: 0 });
   const hoyIso = fechaIsoBuenosAires();
   const inicioSemana = useMemo(() => {
     const fecha = new Date(`${hoyIso}T00:00:00Z`);
@@ -2895,13 +2944,13 @@ function AdminCajas({ token }) {
   };
 
   return <div className="space-y-4">
-    <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div className="flex flex-wrap items-start justify-between gap-3 mb-3"><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Rendición por período</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Elegí día, semana, mes o cualquier rango y descargalo en PDF.</p></div><button onClick={async () => { const { descargarReporteCaja } = await import("./utils/reporteCajaPdf"); descargarReporteCaja({ desde, hasta, cajas }); }} disabled={cargando || !cajas.length} className="f-body inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}><Download size={14} /> Descargar PDF</button></div><div className="flex flex-wrap gap-2 items-center"><button onClick={() => aplicarPreset("hoy")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("hoy")}>Hoy</button><button onClick={() => aplicarPreset("semana")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("semana")}>Últimos 7 días</button><button onClick={() => aplicarPreset("mes")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("mes")}>Este mes</button><span className="f-body text-[11px] ml-1" style={{ color: c.textFaint }}>Desde</span><Input type="date" value={desde} max={hasta} onChange={e => setDesde(e.target.value)} className="max-w-[165px]" /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>hasta</span><Input type="date" value={hasta} min={desde} max={fechaIsoBuenosAires()} onChange={e => setHasta(e.target.value)} className="max-w-[165px]" /></div></div>
+    <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}><div className="flex flex-wrap items-start justify-between gap-3 mb-3"><div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Rendición por período</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Elegí día, semana, mes o cualquier rango y descargalo en PDF.</p><p className="f-body text-[10px] mt-1" style={{ color: c.amber }}>Caja suma únicamente pedidos marcados como Entregados.</p></div><button onClick={async () => { const { descargarReporteCaja } = await import("./utils/reporteCajaPdf"); descargarReporteCaja({ desde, hasta, cajas }); }} disabled={cargando || !cajas.length} className="f-body inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}><Download size={14} /> Descargar PDF</button></div><div className="flex flex-wrap gap-2 items-center"><button onClick={() => aplicarPreset("hoy")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("hoy")}>Hoy</button><button onClick={() => aplicarPreset("semana")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("semana")}>Últimos 7 días</button><button onClick={() => aplicarPreset("mes")} className="f-body px-3 py-2 rounded-xl text-xs" style={estiloPreset("mes")}>Este mes</button><span className="f-body text-[11px] ml-1" style={{ color: c.textFaint }}>Desde</span><Input type="date" value={desde} max={hasta} onChange={e => setDesde(e.target.value)} className="max-w-[165px]" /><span className="f-body text-[11px]" style={{ color: c.textFaint }}>hasta</span><Input type="date" value={hasta} min={desde} max={fechaIsoBuenosAires()} onChange={e => setHasta(e.target.value)} className="max-w-[165px]" /></div></div>
     {cargando ? <Cargando label="Calculando cierres..." /> : <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><ResumenCajaDato label="Efectivo cobrado" valor={moneda(totales.efectivo)} color={c.success} fondo={c.surface} /><ResumenCajaDato label="Transferencias" valor={moneda(totales.transferencias)} color={c.accent} fondo={c.surface} /><ResumenCajaDato label="Extracciones" valor={`− ${moneda(totales.extracciones)}`} color={c.danger} fondo={c.surface} /><ResumenCajaDato label="Efectivo esperado" valor={moneda(totales.rendir)} color={c.text} fondo={c.surface} /></div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3"><ResumenCajaDato label="Ventas del período" valor={moneda(totales.ventas)} color={c.text} fondo={c.surface} /><ResumenCajaDato label="Efectivo cobrado" valor={moneda(totales.efectivo)} color={c.success} fondo={c.surface} /><ResumenCajaDato label="Transferencias" valor={moneda(totales.transferencias)} color={c.accent} fondo={c.surface} /><ResumenCajaDato label="Remitos" valor={moneda(totales.remitos)} color={c.amber} fondo={c.surface} /><ResumenCajaDato label="Extracciones" valor={`− ${moneda(totales.extracciones)}`} color={c.danger} fondo={c.surface} /><ResumenCajaDato label="Efectivo esperado" valor={moneda(totales.rendir)} color={c.text} fondo={c.surface} /></div>
       {!cajas.length && <div className="rounded-2xl p-8 text-center" style={{ background: c.surface, border: `1px solid ${c.border}` }}><p className="f-body text-xs" style={{ color: c.textFaint }}>No hay movimientos de caja en este período.</p></div>}
       <div className="grid lg:grid-cols-2 gap-4">{cajas.map(caja => <article key={`${caja.fecha}-${caja.camion.id}`} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
         <div className="flex items-start justify-between gap-3 mb-4"><div><CamionChip camion={caja.camion} /><p className="f-body text-[11px] mt-1.5" style={{ color: c.textFaint }}>{formatearFechaEntrega(caja.fecha)} · {caja.choferNombre || "Sin chofer"} · {caja.pedidosEntregados} entregas</p></div><span className="f-body text-[11px] px-2.5 py-1 rounded-full" style={{ background: caja.cerrado ? c.successSoft : c.amberSoft, color: caja.cerrado ? c.success : c.amber }}>{caja.cerrado ? "Cerrada" : "Pendiente de cierre"}</span></div>
-        <div className="grid grid-cols-2 gap-2 mb-4"><ResumenCajaDato label="Ventas" valor={moneda(caja.ventasTotal)} color={c.text} fondo={c.surfaceAlt} /><ResumenCajaDato label="Efectivo" valor={moneda(caja.efectivoCobrado)} color={c.success} fondo={c.successSoft} /><ResumenCajaDato label="Transferencias" valor={moneda(caja.transferenciasCobradas)} color={c.accent} fondo={c.accentSoft} /><ResumenCajaDato label="Sin cobrar" valor={moneda(caja.pendienteCobro)} color={caja.pendienteCobro ? c.amber : c.textMuted} fondo={caja.pendienteCobro ? c.amberSoft : c.surfaceAlt} /></div>
+        <div className="grid grid-cols-2 gap-2 mb-4"><ResumenCajaDato label="Ventas" valor={moneda(caja.ventasTotal)} color={c.text} fondo={c.surfaceAlt} /><ResumenCajaDato label="Efectivo" valor={moneda(caja.efectivoCobrado)} color={c.success} fondo={c.successSoft} /><ResumenCajaDato label="Transferencias" valor={moneda(caja.transferenciasCobradas)} color={c.accent} fondo={c.accentSoft} /><ResumenCajaDato label="Remitos" valor={moneda(caja.remitosTotal)} color={caja.remitosTotal ? c.amber : c.textMuted} fondo={caja.remitosTotal ? c.amberSoft : c.surfaceAlt} /></div>
         <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Unidades vendidas</p>{caja.productos.length ? <div className="space-y-1">{caja.productos.map(producto => <div key={producto.nombre} className="flex justify-between text-[11px]"><span className="f-body" style={{ color: c.textMuted }}>{producto.nombre}</span><span className="f-mono" style={{ color: c.text }}>{producto.cantidad}</span></div>)}</div> : <p className="f-body text-[11px]" style={{ color: c.textFaint }}>Sin entregas.</p>}</div>
         {!!caja.extracciones.length && <div className="mb-4"><p className="f-body text-xs font-medium mb-2" style={{ color: c.text }}>Extracciones</p>{caja.extracciones.map(item => <div key={item.id} className="flex justify-between gap-3 text-[11px] py-1"><span className="f-body" style={{ color: c.textMuted }}>{item.concepto} · {item.responsable}</span><span className="f-mono shrink-0" style={{ color: c.danger }}>− {moneda(item.monto)}</span></div>)}</div>}
         <div className="rounded-xl p-3" style={{ background: c.accentSoft }}><div className="flex justify-between"><span className="f-body text-xs" style={{ color: c.textMuted }}>Efectivo esperado</span><span className="f-mono font-semibold" style={{ color: c.accent }}>{moneda(caja.efectivoEsperado)}</span></div>{caja.cerrado && <><div className="flex justify-between mt-2"><span className="f-body text-xs" style={{ color: c.textMuted }}>Declarado</span><span className="f-mono" style={{ color: c.text }}>{moneda(caja.efectivoDeclarado)}</span></div><div className="flex justify-between mt-2"><span className="f-body text-xs" style={{ color: c.textMuted }}>Diferencia</span><span className="f-mono" style={{ color: caja.diferencia === 0 ? c.success : c.danger }}>{moneda(caja.diferencia)}</span></div></>}</div>
