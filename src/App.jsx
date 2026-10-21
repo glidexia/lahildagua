@@ -9,7 +9,7 @@ import {
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
   Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
   ImagePlus, Upload, Eye, EyeOff, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download, ChevronDown,
-  Navigation, ExternalLink
+  Navigation, ExternalLink, Radio, LocateFixed
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -1370,7 +1370,8 @@ function MapaRutaChofer({ ruta }) {
     });
 
     const origen = [Number(ruta.origen.latitud), Number(ruta.origen.longitud)];
-    L.marker(origen, { icon: crearIcono("G", "#0f172a", c.accent) }).addTo(mapa).bindTooltip("Galpón", { direction: "top" });
+    const origenEnVivo = Boolean(ruta.ubicacionActual);
+    L.marker(origen, { icon: crearIcono(origenEnVivo ? "C" : "G", "#0f172a", c.accent) }).addTo(mapa).bindTooltip(origenEnVivo ? "Ubicación actual del camión" : "Galpón", { direction: "top" });
     ruta.paradas.forEach((parada) => {
       L.marker([Number(parada.latitud), Number(parada.longitud)], { icon: crearIcono(parada.parada, c.accent) })
         .addTo(mapa)
@@ -1395,23 +1396,48 @@ function MapaRutaChofer({ ruta }) {
   const km = ruta.distanciaMetros != null ? (ruta.distanciaMetros / 1000).toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
   const minutos = ruta.duracionSegundos != null ? Math.max(1, Math.round(ruta.duracionSegundos / 60)) : null;
   const navegar = enlaceNavegacionRuta(ruta);
+  const proximaMinutos = ruta.proximaParada?.duracionSegundos != null ? Math.max(1, Math.round(ruta.proximaParada.duracionSegundos / 60)) : null;
+  const proximaKm = ruta.proximaParada?.distanciaMetros != null ? (ruta.proximaParada.distanciaMetros / 1000).toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
+  const origenEtiqueta = ruta.ubicacionActual ? "Ubicación actual" : "Galpón";
   return (
     <section className="rounded-2xl overflow-hidden mt-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
       <div className="p-4 flex items-start justify-between gap-3">
         <div>
           <p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Navigation size={16} color={c.accent} /> Mapa del recorrido</p>
           <p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>
-            Galpón + {ruta.paradas.length} parada{ruta.paradas.length !== 1 ? "s" : ""}{km ? ` · ${km} km` : ""}{minutos ? ` · ${minutos} min aprox.` : ""}
+            {origenEtiqueta} + {ruta.paradas.length} parada{ruta.paradas.length !== 1 ? "s" : ""}{km ? ` · ${km} km` : ""}{minutos ? ` · ${minutos} min aprox.` : ""}
           </p>
         </div>
         {navegar && <a href={navegar} target="_blank" rel="noreferrer" className="f-body shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-medium" style={{ background: c.accentSoft, color: c.accent }}><ExternalLink size={12} /> Navegar</a>}
       </div>
+      {ruta.proximaParada && <div className="mx-4 mb-3 rounded-xl p-3 flex items-start gap-2.5" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}><div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center f-mono text-xs font-semibold" style={{ background: c.accent, color: c.bgAlt }}>1</div><div className="min-w-0"><p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.accent }}>Próxima parada</p><p className="f-body text-sm font-semibold truncate mt-0.5" style={{ color: c.text }}>{ruta.proximaParada.cliente}</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>{ruta.proximaParada.direccion}{proximaMinutos ? ` · ${proximaMinutos} min` : ""}{proximaKm ? ` · ${proximaKm} km` : ""}</p></div></div>}
       {ruta.modo === "aproximado" && <p className="f-body mx-4 mb-3 rounded-lg px-2.5 py-2 text-[10px]" style={{ background: c.amberSoft, color: c.amber }}>El proveedor de rutas no respondió: se muestra una unión aproximada entre paradas.</p>}
       <div ref={contenedorRef} className="w-full h-[330px]" aria-label="Mapa interactivo del recorrido del chofer" />
       <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
-        <p className="f-body text-[10px]" style={{ color: c.textFaint }}><b style={{ color: c.textMuted }}>G</b> Galpón · Los números coinciden con las tarjetas.</p>
+        <p className="f-body text-[10px]" style={{ color: c.textFaint }}><b style={{ color: c.textMuted }}>{ruta.ubicacionActual ? "C" : "G"}</b> {origenEtiqueta} · Los números coinciden con las tarjetas.</p>
         <span className="f-body text-[10px] shrink-0" style={{ color: c.textFaint }}>OSM / OSRM</span>
       </div>
+    </section>
+  );
+}
+
+function SeguimientoRepartosAdmin({ rutas }) {
+  const c = useTheme();
+  const [camionId, setCamionId] = useState(null);
+  useEffect(() => {
+    if (!rutas.length) return setCamionId(null);
+    if (!rutas.some((ruta) => ruta.camion.id === camionId)) setCamionId(rutas[0].camion.id);
+  }, [rutas, camionId]);
+  if (!rutas.length) return null;
+  const seleccionada = rutas.find((ruta) => ruta.camion.id === camionId) || rutas[0];
+  return (
+    <section className="rounded-2xl p-4" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}` }}>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div><p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Radio size={16} color={c.accent} /> Seguimiento de repartos</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Ubicación del camión, próxima parada y recorrido pendiente en un mismo mapa.</p></div>
+        <div className="flex flex-wrap gap-2">{rutas.map((ruta) => <button key={ruta.camion.id} onClick={() => setCamionId(ruta.camion.id)} className="f-body rounded-xl px-3 py-2 text-xs font-medium inline-flex items-center gap-2" style={{ background: ruta.camion.id === seleccionada.camion.id ? `${ruta.camion.color}22` : c.surface, color: ruta.camion.color, border: `1px solid ${ruta.camion.id === seleccionada.camion.id ? ruta.camion.color : c.border}` }}><span className="w-2 h-2 rounded-full" style={{ background: ruta.ubicacionActual ? c.success : c.textFaint }} />{ruta.camion.nombre}<span className="text-[9px] opacity-70">{ruta.ubicacionActual ? "EN VIVO" : "SIN SEÑAL"}</span></button>)}</div>
+      </div>
+      {!seleccionada.ubicacionActual && <p className="f-body mt-3 rounded-xl px-3 py-2 text-[11px]" style={{ background: c.amberSoft, color: c.amber }}>El chofer todavía no activó su ubicación. El recorrido se muestra partiendo desde el galpón.</p>}
+      <MapaRutaChofer ruta={seleccionada} />
     </section>
   );
 }
@@ -1430,6 +1456,10 @@ function ChoferPanel({ session, onLogout }) {
   const [metodoCobro, setMetodoCobro] = useState("");
   const [comprobanteCobro, setComprobanteCobro] = useState(null);
   const [guardandoCobro, setGuardandoCobro] = useState(false);
+  const [compartiendoUbicacion, setCompartiendoUbicacion] = useState(false);
+  const [mensajeUbicacion, setMensajeUbicacion] = useState("Activala para que administración vea el camión y recalcular la próxima parada.");
+  const seguimientoUbicacionRef = useRef(null);
+  const ultimoEnvioUbicacionRef = useRef(0);
   const camionColor = colorDeCamion(session.camionId);
   const diaEditable = dia !== "manana";
 
@@ -1477,6 +1507,42 @@ function ChoferPanel({ session, onLogout }) {
     const t = setInterval(actualizarFechas, 60000);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => () => {
+    if (seguimientoUbicacionRef.current != null && navigator.geolocation) navigator.geolocation.clearWatch(seguimientoUbicacionRef.current);
+  }, []);
+
+  const activarUbicacion = () => {
+    if (!navigator.geolocation) return setMensajeUbicacion("Este dispositivo no permite compartir ubicación.");
+    if (seguimientoUbicacionRef.current != null) return;
+    setMensajeUbicacion("Buscando señal GPS...");
+    seguimientoUbicacionRef.current = navigator.geolocation.watchPosition(async (posicion) => {
+      setCompartiendoUbicacion(true);
+      const ahora = Date.now();
+      if (ahora - ultimoEnvioUbicacionRef.current < 7000) return;
+      ultimoEnvioUbicacionRef.current = ahora;
+      try {
+        await api("/chofer/ubicacion", {
+          method: "PUT",
+          token: session.token,
+          body: { latitud: posicion.coords.latitude, longitud: posicion.coords.longitude, precisionMetros: posicion.coords.accuracy },
+        });
+        setMensajeUbicacion(`En vivo · precisión aproximada ${Math.round(posicion.coords.accuracy)} m`);
+      } catch (e) { setMensajeUbicacion("No pudimos enviar la ubicación. Revisá la conexión."); }
+    }, (errorGeolocalizacion) => {
+      setCompartiendoUbicacion(false);
+      seguimientoUbicacionRef.current = null;
+      setMensajeUbicacion(errorGeolocalizacion.code === 1 ? "Permiso de ubicación rechazado. Podés habilitarlo desde el navegador." : "No pudimos obtener la ubicación del dispositivo.");
+    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+  };
+
+  const detenerUbicacion = async () => {
+    if (seguimientoUbicacionRef.current != null) navigator.geolocation.clearWatch(seguimientoUbicacionRef.current);
+    seguimientoUbicacionRef.current = null;
+    setCompartiendoUbicacion(false);
+    setMensajeUbicacion("Ubicación pausada.");
+    await api("/chofer/ubicacion", { method: "DELETE", token: session.token }).catch(() => {});
+    await cargar(false);
+  };
 
   const hoyPend = dia === "hoy" ? pedidos.filter(o => o.estado === "pendiente").length : null;
   const hoyEnt = dia === "hoy" ? pedidos.filter(o => o.estado === "entregado").length : null;
@@ -1554,6 +1620,12 @@ function ChoferPanel({ session, onLogout }) {
 
         <div className="mb-4"><ResumenCarga carga={carga} /></div>
 
+        <div className="rounded-2xl p-3.5 mb-4 flex items-center gap-3" style={{ background: compartiendoUbicacion ? c.successSoft : c.surface, border: `1px solid ${compartiendoUbicacion ? c.success : c.border}` }}>
+          <div className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center" style={{ background: compartiendoUbicacion ? c.success : c.accentSoft }}><Radio size={16} color={compartiendoUbicacion ? c.bgAlt : c.accent} /></div>
+          <div className="min-w-0 flex-1"><p className="f-display text-sm font-semibold" style={{ color: c.text }}>Ubicación en vivo</p><p className="f-body text-[10px] mt-0.5" style={{ color: compartiendoUbicacion ? c.success : c.textFaint }}>{mensajeUbicacion}</p></div>
+          <button onClick={compartiendoUbicacion ? detenerUbicacion : activarUbicacion} className="f-body shrink-0 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[11px] font-medium" style={{ background: compartiendoUbicacion ? c.surface : c.accent, color: compartiendoUbicacion ? c.danger : c.bgAlt }}><LocateFixed size={12} /> {compartiendoUbicacion ? "Pausar" : "Activar"}</button>
+        </div>
+
         {dia === "ayer" && pedidos.some(o => o.estado === "pendiente") && (
           <p className="f-body text-[11px] mb-3 px-3 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.amber }}>Los pendientes de ayer todavía se pueden completar.</p>
         )}
@@ -1561,7 +1633,7 @@ function ChoferPanel({ session, onLogout }) {
         <ErrorBanner mensaje={error} />
         {cargando ? <Cargando /> : (
           <>
-            <p className="f-body text-[11px] mb-3 flex flex-wrap items-center gap-1.5" style={{ color: c.textFaint }}><MapPin size={11} /> Ruta optimizada por calles desde el galpón · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap/OSRM</a></p>
+            <p className="f-body text-[11px] mb-3 flex flex-wrap items-center gap-1.5" style={{ color: c.textFaint }}><MapPin size={11} /> Ruta optimizada por calles {ruta?.ubicacionActual ? "desde tu ubicación actual" : "desde el galpón"} · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap/OSRM</a></p>
             <div className="space-y-2.5">
               {pedidos.map((o) => (
                 <div key={o.id} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: dia === "manana" ? 0.75 : 1 }}>
@@ -1852,6 +1924,7 @@ function AdminPedidos({ token, camiones }) {
   const [itemsEdit, setItemsEdit] = useState([]);
   const [notasEdit, setNotasEdit] = useState("");
   const [cargasPedidos, setCargasPedidos] = useState([]);
+  const [rutasVivo, setRutasVivo] = useState([]);
   const fechaCarga = desde && hasta && desde === hasta
     ? desde
     : (!desde && !hasta && ["ayer", "hoy", "manana"].includes(fDia) ? fDia : null);
@@ -1883,12 +1956,14 @@ function AdminPedidos({ token, camiones }) {
       if (fCamion !== "todos") params.set("camionId", fCamion);
       if (fEstado !== "todos") params.set("estado", fEstado);
       if (q) params.set("q", q);
-      const [gruposNuevos, cargasNuevas] = await Promise.all([
+      const [gruposNuevos, cargasNuevas, rutasNuevas] = await Promise.all([
         api(`/admin/pedidos?${params.toString()}`, { token }),
         fechaCarga ? api(`/admin/cargas?fecha=${fechaCarga}`, { token }) : Promise.resolve({ cargas: [] }),
+        fechaCarga ? api(`/admin/rutas?dia=${fechaCarga}`, { token }).catch(() => ({ rutas: [] })) : Promise.resolve({ rutas: [] }),
       ]);
       setGrupos(gruposNuevos);
       setCargasPedidos(cargasNuevas.cargas || []);
+      setRutasVivo(anterior => JSON.stringify(anterior) === JSON.stringify(rutasNuevas.rutas || []) ? anterior : (rutasNuevas.rutas || []));
       setError("");
     } catch (e) { setError("No pudimos cargar los pedidos."); }
     if (mostrarSpinner) setCargando(false);
@@ -1897,6 +1972,12 @@ function AdminPedidos({ token, camiones }) {
   useEffect(() => { cargar(true); }, [cargar]);
   useEffect(() => { api("/admin/productos", { token }).then(setCatalogo).catch(() => {}); }, [token]);
   useEffect(() => { const t = setInterval(() => cargar(false), 10000); return () => clearInterval(t); }, [cargar]);
+  useEffect(() => {
+    const socket = io(API_BASE, { auth: { token }, transports: ["websocket", "polling"] });
+    socket.on("ubicacion:actualizada", () => cargar(false));
+    socket.on("pedido:actualizado", () => cargar(false));
+    return () => socket.disconnect();
+  }, [cargar, token]);
 
   const cerrarDetalle = useCallback(() => {
     setDetalleId(null);
@@ -2079,6 +2160,8 @@ function AdminPedidos({ token, camiones }) {
           {cargasPedidos.filter(carga => fCamion === "todos" || String(carga.camion.id) === String(fCamion)).map(carga => <div key={carga.camion.id}><div className="mb-2"><CamionChip camion={carga.camion} /></div><ResumenCarga carga={carga} compacto /></div>)}
         </div>
       </section>}
+
+      {fechaCarga && <SeguimientoRepartosAdmin rutas={rutasVivo.filter(ruta => fCamion === "todos" || String(ruta.camion.id) === String(fCamion))} />}
 
       <ErrorBanner mensaje={error} />
       {cargando ? <Cargando /> : (
