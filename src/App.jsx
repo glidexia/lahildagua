@@ -1566,8 +1566,17 @@ function ChoferPanel({ session, onLogout }) {
     setComprobanteCobro(null);
   };
 
+  const tieneComprobanteVigente = (pedido, metodo) => pedido.tieneComprobante
+    && pedido.comprobanteTipo === metodo
+    && (metodo !== "Transferencia" || !pedido.requiereComprobanteTransferencia);
+
   const registrarCobro = async (pedido) => {
     if (!metodoCobro) return mostrarErrorGlobal("Elegí Efectivo, Transferencia o Remito.");
+    if (metodoCobro === "Transferencia" && !comprobanteCobro && !tieneComprobanteVigente(pedido, "Transferencia")) {
+      return mostrarErrorGlobal(pedido.tieneComprobante && pedido.comprobanteTipo === "Transferencia"
+        ? "Como modificaste los productos, subí el comprobante actualizado de la transferencia."
+        : "Para confirmar una transferencia, subí el comprobante.");
+    }
     setGuardandoCobro(true);
     try {
       const form = new FormData();
@@ -1647,7 +1656,7 @@ function ChoferPanel({ session, onLogout }) {
                   <div className="flex flex-wrap items-center gap-1.5 mb-3">
                     {(o.productos || []).map(p => <span key={p} className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>{p}</span>)}
                     <span className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>Declaró: {o.pago}</span>
-                    {o.pago === "Transferencia" && <span className="f-body text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: o.tieneComprobante ? c.successSoft : c.surfaceAlt, color: o.tieneComprobante ? c.success : c.textMuted }}>{o.tieneComprobante ? <CheckCircle2 size={11} /> : <FileCheck2 size={11} />}{o.tieneComprobante ? "Comprobante cargado" : "Comprobante opcional no adjunto"}</span>}
+                    {o.pago === "Transferencia" && <span className="f-body text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: tieneComprobanteVigente(o, "Transferencia") ? c.successSoft : c.amberSoft, color: tieneComprobanteVigente(o, "Transferencia") ? c.success : c.amber }}>{tieneComprobanteVigente(o, "Transferencia") ? <CheckCircle2 size={11} /> : <FileCheck2 size={11} />}{tieneComprobanteVigente(o, "Transferencia") ? "Transferencia comprobada" : (o.tieneComprobante && o.comprobanteTipo === "Transferencia" ? "Falta comprobante actualizado" : "Transferencia sin comprobar")}</span>}
                     {o.total != null && <span className="f-mono text-[11px] px-2 py-0.5 rounded-full ml-auto font-medium" style={{ background: c.accentSoft, color: c.accent }}>${Number(o.total).toLocaleString("es-AR")}</span>}
                   </div>
                   {o.estado === "entregado" && (
@@ -1670,9 +1679,9 @@ function ChoferPanel({ session, onLogout }) {
                       <div className="flex flex-wrap gap-1.5">
                         {COBROS_CHOFER.map(p => <button key={p} onClick={() => { setMetodoCobro(p); if (p === "Efectivo") setComprobanteCobro(null); }} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium" style={{ background: metodoCobro === p ? c.accent : c.surface, color: metodoCobro === p ? c.bgAlt : c.accent, border: `1px solid ${c.accent}` }}>{p}</button>)}
                       </div>
-                      {["Transferencia", "Remito"].includes(metodoCobro) && <label className="f-body mt-2 flex items-center justify-center gap-2 w-full px-2.5 py-2 rounded-lg text-[11px] font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? c.success : c.accent}`, color: comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? c.success : c.accent }}><input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setComprobanteCobro(e.target.files?.[0] || null)} />{comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? <FileCheck2 size={13} /> : <Upload size={13} />}<span className="truncate">{comprobanteCobro ? comprobanteCobro.name : (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito") ? `Comprobante cargado · reemplazar ${metodoCobro.toLowerCase()}` : `Subir comprobante de ${metodoCobro.toLowerCase()} (opcional)`)}</span></label>}
+                      {["Transferencia", "Remito"].includes(metodoCobro) && <label className="f-body mt-2 flex items-center justify-center gap-2 w-full px-2.5 py-2 rounded-lg text-[11px] font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobanteCobro || tieneComprobanteVigente(o, metodoCobro) ? c.success : c.accent}`, color: comprobanteCobro || tieneComprobanteVigente(o, metodoCobro) ? c.success : c.accent }}><input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setComprobanteCobro(e.target.files?.[0] || null)} />{comprobanteCobro || tieneComprobanteVigente(o, metodoCobro) ? <FileCheck2 size={13} /> : <Upload size={13} />}<span className="truncate">{comprobanteCobro ? comprobanteCobro.name : (tieneComprobanteVigente(o, metodoCobro) ? `Comprobante cargado · reemplazar ${metodoCobro.toLowerCase()}` : (metodoCobro === "Transferencia" ? `Subir comprobante de transferencia${o.tieneComprobante && o.comprobanteTipo === "Transferencia" ? " actualizado" : ""} (obligatorio)` : "Subir comprobante de remito (opcional)"))}</span></label>}
                       <div className="flex flex-wrap gap-1.5 mt-2">
-                        {metodoCobro && <button onClick={() => registrarCobro(o)} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium inline-flex items-center gap-1 disabled:opacity-60" style={{ background: c.success, color: c.bgAlt }}>{guardandoCobro ? <Spinner size={11} /> : (metodoCobro === "Remito" ? <FileCheck2 size={11} /> : <DollarSign size={11} />)} {metodoCobro === "Remito" ? (o.estado === "pendiente" ? "Confirmar entrega con remito" : "Guardar remito") : (o.estado === "pendiente" ? "Confirmar entrega y cobro" : "Guardar cobro")}</button>}
+                        {metodoCobro && <button onClick={() => registrarCobro(o)} disabled={guardandoCobro || (metodoCobro === "Transferencia" && !comprobanteCobro && !tieneComprobanteVigente(o, "Transferencia"))} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium inline-flex items-center gap-1 disabled:opacity-60" style={{ background: c.success, color: c.bgAlt }}>{guardandoCobro ? <Spinner size={11} /> : (metodoCobro === "Remito" ? <FileCheck2 size={11} /> : <DollarSign size={11} />)} {metodoCobro === "Remito" ? (o.estado === "pendiente" ? "Confirmar entrega con remito" : "Guardar remito") : (o.estado === "pendiente" ? "Confirmar entrega y cobro" : "Guardar cobro")}</button>}
                         <button onClick={cerrarCobro} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg" style={{ color: c.textFaint }}>Cancelar</button>
                       </div>
                     </div>
