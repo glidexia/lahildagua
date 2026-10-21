@@ -1,12 +1,15 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { io } from "socket.io-client";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   Droplet, Droplets, Package, Truck, User, MapPin, Building2, Store,
   CheckCircle2, XCircle, Clock, LayoutDashboard, Users, ChevronRight, ChevronLeft,
   Minus, Plus, CalendarClock, LogOut, BarChart3, Lock, Search, ArrowUpDown,
   ClipboardList, Boxes, Pencil, Save, Sparkles, ArrowLeftRight, TrendingUp, Sun, Moon,
   Loader2, AlertCircle, MessageCircle, Settings, Trash2, KeyRound, DollarSign,
-  ImagePlus, Upload, Eye, EyeOff, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download, ChevronDown
+  ImagePlus, Upload, Eye, EyeOff, Landmark, X, FileCheck2, RefreshCw, ArrowLeft, Wallet, Download, ChevronDown,
+  Navigation, ExternalLink
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 
@@ -1332,12 +1335,94 @@ function ResumenCarga({ carga, compacto = false }) {
   </div>;
 }
 
+function enlaceNavegacionRuta(ruta) {
+  if (!ruta?.origen || !ruta?.paradas?.length) return "";
+  const origen = `${ruta.origen.latitud},${ruta.origen.longitud}`;
+  const ultima = ruta.paradas[ruta.paradas.length - 1];
+  const params = new URLSearchParams({
+    api: "1",
+    origin: origen,
+    destination: `${ultima.latitud},${ultima.longitud}`,
+    travelmode: "driving",
+  });
+  const intermedias = ruta.paradas.slice(0, -1).map((parada) => `${parada.latitud},${parada.longitud}`).join("|");
+  if (intermedias) params.set("waypoints", intermedias);
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+function MapaRutaChofer({ ruta }) {
+  const c = useTheme();
+  const contenedorRef = useRef(null);
+
+  useEffect(() => {
+    if (!contenedorRef.current || !ruta?.disponible || !ruta?.geometria?.coordinates?.length) return undefined;
+    const mapa = L.map(contenedorRef.current, { zoomControl: true, scrollWheelZoom: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    }).addTo(mapa);
+
+    const crearIcono = (texto, fondo, borde = "#ffffff") => L.divIcon({
+      className: "",
+      html: `<div style="width:30px;height:30px;border-radius:999px;background:${fondo};color:#fff;border:3px solid ${borde};box-shadow:0 2px 8px rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;font:700 12px Inter,sans-serif">${texto}</div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    });
+
+    const origen = [Number(ruta.origen.latitud), Number(ruta.origen.longitud)];
+    L.marker(origen, { icon: crearIcono("G", "#0f172a", c.accent) }).addTo(mapa).bindTooltip("Galpón", { direction: "top" });
+    ruta.paradas.forEach((parada) => {
+      L.marker([Number(parada.latitud), Number(parada.longitud)], { icon: crearIcono(parada.parada, c.accent) })
+        .addTo(mapa)
+        .bindTooltip(`${parada.parada}. ${parada.cliente}`, { direction: "top" });
+    });
+    const recorrido = L.geoJSON(ruta.geometria, { style: { color: c.accent, weight: 5, opacity: 0.9 } }).addTo(mapa);
+    const limites = recorrido.getBounds();
+    if (limites.isValid()) mapa.fitBounds(limites, { padding: [24, 24], maxZoom: 16 });
+    setTimeout(() => mapa.invalidateSize(), 0);
+    return () => mapa.remove();
+  }, [ruta, c]);
+
+  if (!ruta?.disponible) {
+    return (
+      <div className="rounded-2xl p-4 mt-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+        <p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Navigation size={16} color={c.accent} /> Mapa del recorrido</p>
+        <p className="f-body text-xs mt-2" style={{ color: c.textFaint }}>No hay paradas pendientes con ubicación para mostrar en este día.</p>
+      </div>
+    );
+  }
+
+  const km = ruta.distanciaMetros != null ? (ruta.distanciaMetros / 1000).toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
+  const minutos = ruta.duracionSegundos != null ? Math.max(1, Math.round(ruta.duracionSegundos / 60)) : null;
+  const navegar = enlaceNavegacionRuta(ruta);
+  return (
+    <section className="rounded-2xl overflow-hidden mt-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+      <div className="p-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Navigation size={16} color={c.accent} /> Mapa del recorrido</p>
+          <p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>
+            Galpón + {ruta.paradas.length} parada{ruta.paradas.length !== 1 ? "s" : ""}{km ? ` · ${km} km` : ""}{minutos ? ` · ${minutos} min aprox.` : ""}
+          </p>
+        </div>
+        {navegar && <a href={navegar} target="_blank" rel="noreferrer" className="f-body shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-medium" style={{ background: c.accentSoft, color: c.accent }}><ExternalLink size={12} /> Navegar</a>}
+      </div>
+      {ruta.modo === "aproximado" && <p className="f-body mx-4 mb-3 rounded-lg px-2.5 py-2 text-[10px]" style={{ background: c.amberSoft, color: c.amber }}>El proveedor de rutas no respondió: se muestra una unión aproximada entre paradas.</p>}
+      <div ref={contenedorRef} className="w-full h-[330px]" aria-label="Mapa interactivo del recorrido del chofer" />
+      <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
+        <p className="f-body text-[10px]" style={{ color: c.textFaint }}><b style={{ color: c.textMuted }}>G</b> Galpón · Los números coinciden con las tarjetas.</p>
+        <span className="f-body text-[10px] shrink-0" style={{ color: c.textFaint }}>OSM / OSRM</span>
+      </div>
+    </section>
+  );
+}
+
 function ChoferPanel({ session, onLogout }) {
   const c = useTheme();
   const [dia, setDia] = useState("hoy");
   const [dias, setDias] = useState(() => crearDias());
   const [pedidos, setPedidos] = useState([]);
   const [carga, setCarga] = useState(null);
+  const [ruta, setRuta] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [actualizando, setActualizando] = useState(false);
@@ -1351,8 +1436,14 @@ function ChoferPanel({ session, onLogout }) {
   const cargar = useCallback(async (mostrarSpinner) => {
     if (mostrarSpinner) setCargando(true);
     try {
-      const [pedidosDia, cargaDia] = await Promise.all([api(`/chofer/pedidos?dia=${dia}`, { token: session.token }), api(`/chofer/carga?dia=${dia}`, { token: session.token })]);
-      setPedidos(pedidosDia); setCarga(cargaDia); setError("");
+      const [pedidosDia, cargaDia, rutaDia] = await Promise.all([
+        api(`/chofer/pedidos?dia=${dia}`, { token: session.token }),
+        api(`/chofer/carga?dia=${dia}`, { token: session.token }),
+        api(`/chofer/ruta?dia=${dia}`, { token: session.token }).catch(() => null),
+      ]);
+      setPedidos(pedidosDia); setCarga(cargaDia);
+      setRuta(anterior => JSON.stringify(anterior) === JSON.stringify(rutaDia) ? anterior : rutaDia);
+      setError("");
     }
     catch (e) { setError("No pudimos cargar tu ruta."); }
     if (mostrarSpinner) setCargando(false);
@@ -1521,6 +1612,7 @@ function ChoferPanel({ session, onLogout }) {
               ))}
               {pedidos.length === 0 && <p className="f-body text-xs text-center py-8" style={{ color: c.textFaint }}>Sin pedidos para este día.</p>}
             </div>
+            <MapaRutaChofer ruta={ruta} />
             <CajaChofer session={session} dia={dia} pedidos={pedidos} />
           </>
         )}
