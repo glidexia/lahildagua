@@ -1470,7 +1470,7 @@ function ChoferPanel({ session, onLogout }) {
         <ErrorBanner mensaje={error} />
         {cargando ? <Cargando /> : (
           <>
-            <p className="f-body text-[11px] mb-3 flex items-center gap-1.5" style={{ color: c.textFaint }}><MapPin size={11} /> Orden automático por cercanía desde el galpón</p>
+            <p className="f-body text-[11px] mb-3 flex flex-wrap items-center gap-1.5" style={{ color: c.textFaint }}><MapPin size={11} /> Ruta optimizada por calles desde el galpón · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap/OSRM</a></p>
             <div className="space-y-2.5">
               {pedidos.map((o) => (
                 <div key={o.id} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: dia === "manana" ? 0.75 : 1 }}>
@@ -1484,11 +1484,11 @@ function ChoferPanel({ session, onLogout }) {
                   <div className="flex flex-wrap items-center gap-1.5 mb-3">
                     {(o.productos || []).map(p => <span key={p} className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>{p}</span>)}
                     <span className="f-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: c.surfaceAlt, color: c.textMuted }}>Declaró: {o.pago}</span>
-                    {o.pago === "Transferencia" && <span className="f-body text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: o.tieneComprobante ? c.successSoft : c.amberSoft, color: o.tieneComprobante ? c.success : c.amber }}>{o.tieneComprobante ? <CheckCircle2 size={11} /> : <AlertCircle size={11} />}{o.tieneComprobante ? "Comprobante cargado" : "Sin comprobante: cobrar y subir"}</span>}
+                    {o.pago === "Transferencia" && <span className="f-body text-[11px] px-2 py-0.5 rounded-full inline-flex items-center gap-1" style={{ background: o.tieneComprobante ? c.successSoft : c.surfaceAlt, color: o.tieneComprobante ? c.success : c.textMuted }}>{o.tieneComprobante ? <CheckCircle2 size={11} /> : <FileCheck2 size={11} />}{o.tieneComprobante ? "Comprobante cargado" : "Comprobante opcional no adjunto"}</span>}
                     {o.total != null && <span className="f-mono text-[11px] px-2 py-0.5 rounded-full ml-auto font-medium" style={{ background: c.accentSoft, color: c.accent }}>${Number(o.total).toLocaleString("es-AR")}</span>}
                   </div>
                   {o.estado === "entregado" && (
-                    <p className="f-body text-[11px] mb-2 flex items-center gap-1" style={{ color: o.pagoConfirmado ? c.success : c.amber }}><DollarSign size={11} /> {o.pagoConfirmado ? `Cobrado con: ${o.pagoConfirmado}` : "Pago pendiente"}{o.tieneComprobante ? " · comprobante adjunto" : ""}</p>
+                    <p className="f-body text-[11px] mb-2 flex items-center gap-1" style={{ color: o.pagoConfirmado ? c.success : c.amber }}>{o.pagoConfirmado === "Remito" ? <FileCheck2 size={11} /> : <DollarSign size={11} />} {o.pagoConfirmado ? (o.pagoConfirmado === "Remito" ? "Entrega con remito registrada" : `Cobrado con: ${o.pagoConfirmado}`) : "Pago pendiente"}{o.tieneComprobante ? " · comprobante adjunto" : ""}</p>
                   )}
                   {o.notas && <p className="f-body text-[11px] mb-2 px-2.5 py-2 rounded-lg" style={{ background: c.amberSoft, color: c.text }}><b>Nota del cliente:</b> {o.notas}</p>}
                   {o.notaAdmin && <p className="f-body text-[11px] mb-3 px-2.5 py-2 rounded-lg" style={{ background: c.accentSoft, color: c.text }}><b>Indicación de administración:</b> {o.notaAdmin}</p>}
@@ -1503,13 +1503,13 @@ function ChoferPanel({ session, onLogout }) {
                   )}
                   {diaEditable && confirmandoPago === o.id && (
                     <div className="rounded-xl p-2.5" style={{ background: c.accentSoft }}>
-                      <p className="f-body text-[11px] mb-2 font-medium" style={{ color: c.text }}>{o.estado === "pendiente" ? "Entrega y cobro" : "Registrar o actualizar cobro"}</p>
+                      <p className="f-body text-[11px] mb-2 font-medium" style={{ color: c.text }}>{metodoCobro === "Remito" ? (o.estado === "pendiente" ? "Entrega con remito" : "Registrar o actualizar remito") : (o.estado === "pendiente" ? "Entrega y cobro" : "Registrar o actualizar cobro")}</p>
                       <div className="flex flex-wrap gap-1.5">
                         {COBROS_CHOFER.map(p => <button key={p} onClick={() => { setMetodoCobro(p); if (p === "Efectivo") setComprobanteCobro(null); }} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium" style={{ background: metodoCobro === p ? c.accent : c.surface, color: metodoCobro === p ? c.bgAlt : c.accent, border: `1px solid ${c.accent}` }}>{p}</button>)}
                       </div>
                       {["Transferencia", "Remito"].includes(metodoCobro) && <label className="f-body mt-2 flex items-center justify-center gap-2 w-full px-2.5 py-2 rounded-lg text-[11px] font-medium cursor-pointer" style={{ background: c.surface, border: `1px dashed ${comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? c.success : c.accent}`, color: comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? c.success : c.accent }}><input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={e => setComprobanteCobro(e.target.files?.[0] || null)} />{comprobanteCobro || (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito")) ? <FileCheck2 size={13} /> : <Upload size={13} />}<span className="truncate">{comprobanteCobro ? comprobanteCobro.name : (o.tieneComprobante && (metodoCobro === "Transferencia" || o.pagoConfirmado === "Remito") ? `Comprobante cargado · reemplazar ${metodoCobro.toLowerCase()}` : `Subir comprobante de ${metodoCobro.toLowerCase()} (opcional)`)}</span></label>}
                       <div className="flex flex-wrap gap-1.5 mt-2">
-                        {metodoCobro && <button onClick={() => registrarCobro(o)} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium inline-flex items-center gap-1 disabled:opacity-60" style={{ background: c.success, color: c.bgAlt }}>{guardandoCobro ? <Spinner size={11} /> : <DollarSign size={11} />} {o.estado === "pendiente" ? "Confirmar entrega y cobro" : "Guardar cobro"}</button>}
+                        {metodoCobro && <button onClick={() => registrarCobro(o)} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg font-medium inline-flex items-center gap-1 disabled:opacity-60" style={{ background: c.success, color: c.bgAlt }}>{guardandoCobro ? <Spinner size={11} /> : (metodoCobro === "Remito" ? <FileCheck2 size={11} /> : <DollarSign size={11} />)} {metodoCobro === "Remito" ? (o.estado === "pendiente" ? "Confirmar entrega con remito" : "Guardar remito") : (o.estado === "pendiente" ? "Confirmar entrega y cobro" : "Guardar cobro")}</button>}
                         <button onClick={cerrarCobro} disabled={guardandoCobro} className="f-body text-xs px-2.5 py-1.5 rounded-lg" style={{ color: c.textFaint }}>Cancelar</button>
                       </div>
                     </div>
@@ -1967,7 +1967,7 @@ function AdminPedidos({ token, camiones }) {
       )}
       <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: c.accentSoft }}>
         <ArrowLeftRight size={14} color={c.accent} />
-        <p className="f-body text-xs flex-1" style={{ color: c.text }}>Los pedidos se ordenan automáticamente por cercanía geográfica dentro de cada franja, partiendo desde el galpón. Tocá cualquier tarjeta para ver todos sus datos o hacer cambios.</p>
+        <p className="f-body text-xs flex-1" style={{ color: c.text }}>Los pedidos se ordenan automáticamente por recorrido real en calles dentro de cada franja, partiendo desde el galpón. Si el ruteador no está disponible, se usa el orden geográfico seguro. Datos de <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a>. Tocá cualquier tarjeta para ver todos sus datos o hacer cambios.</p>
         <button onClick={() => setNuevoPedidoAbierto(true)} className="f-body shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: c.accent, color: c.bgAlt }}><Plus size={14} /> Cargar pedido</button>
       </div>
       <div className="flex flex-wrap gap-2 items-center">
