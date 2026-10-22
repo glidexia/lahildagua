@@ -82,7 +82,7 @@ function mensajeAmigableApi(status, data, path) {
   return "No pudimos completar la acción. Intentá nuevamente.";
 }
 
-async function api(path, { method = "GET", body, token } = {}) {
+async function api(path, { method = "GET", body, token, silencioso = false } = {}) {
   const esFormulario = typeof FormData !== "undefined" && body instanceof FormData;
   let res;
   try {
@@ -93,7 +93,7 @@ async function api(path, { method = "GET", body, token } = {}) {
     });
   } catch {
     const mensaje = "No pudimos conectarnos. Revisá tu conexión e intentá nuevamente.";
-    mostrarErrorGlobal(mensaje);
+    if (!silencioso) mostrarErrorGlobal(mensaje);
     throw new Error(mensaje);
   }
   let data = {};
@@ -103,7 +103,7 @@ async function api(path, { method = "GET", body, token } = {}) {
     if (res.status === 401 && !path.includes("/auth/")) {
       window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
     }
-    mostrarErrorGlobal(mensaje);
+    if (!silencioso) mostrarErrorGlobal(mensaje);
     throw new Error(mensaje);
   }
   return data;
@@ -1350,7 +1350,7 @@ function enlaceNavegacionRuta(ruta) {
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 
-function MapaRutaChofer({ ruta }) {
+function MapaRutaChofer({ ruta, modoPanel = false }) {
   const c = useTheme();
   const contenedorRef = useRef(null);
 
@@ -1371,9 +1371,9 @@ function MapaRutaChofer({ ruta }) {
 
     const origen = [Number(ruta.origen.latitud), Number(ruta.origen.longitud)];
     const origenEnVivo = Boolean(ruta.ubicacionActual);
-    L.marker(origen, { icon: crearIcono(origenEnVivo ? "C" : "G", "#0f172a", c.accent) }).addTo(mapa).bindTooltip(origenEnVivo ? "Ubicación actual del camión" : "Galpón", { direction: "top" });
+    L.marker(origen, { icon: crearIcono(origenEnVivo ? "🚚" : "G", origenEnVivo ? "#0878d1" : "#0f172a", c.accent) }).addTo(mapa).bindTooltip(origenEnVivo ? "Ubicación actual del camión" : "Galpón", { direction: "top" });
     ruta.paradas.forEach((parada) => {
-      L.marker([Number(parada.latitud), Number(parada.longitud)], { icon: crearIcono(parada.parada, c.accent) })
+      L.marker([Number(parada.latitud), Number(parada.longitud)], { icon: crearIcono(parada.parada, parada.parada === 1 ? "#0b3b82" : c.accent) })
         .addTo(mapa)
         .bindTooltip(`${parada.parada}. ${parada.cliente}`, { direction: "top" });
     });
@@ -1386,7 +1386,7 @@ function MapaRutaChofer({ ruta }) {
 
   if (!ruta?.disponible) {
     return (
-      <div className="rounded-2xl p-4 mt-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+      <div className={`rounded-2xl p-4 ${modoPanel ? "h-full min-h-[460px] flex flex-col justify-center" : "mt-4"}`} style={{ background: c.surface, border: `1px solid ${c.border}` }}>
         <p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Navigation size={16} color={c.accent} /> Mapa del recorrido</p>
         <p className="f-body text-xs mt-2" style={{ color: c.textFaint }}>No hay paradas pendientes con ubicación para mostrar en este día.</p>
       </div>
@@ -1400,7 +1400,7 @@ function MapaRutaChofer({ ruta }) {
   const proximaKm = ruta.proximaParada?.distanciaMetros != null ? (ruta.proximaParada.distanciaMetros / 1000).toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
   const origenEtiqueta = ruta.ubicacionActual ? "Ubicación actual" : "Galpón";
   return (
-    <section className="rounded-2xl overflow-hidden mt-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+    <section className={`rounded-2xl overflow-hidden ${modoPanel ? "h-full" : "mt-4"}`} style={{ background: c.surface, border: `1px solid ${c.border}` }}>
       <div className="p-4 flex items-start justify-between gap-3">
         <div>
           <p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Navigation size={16} color={c.accent} /> Mapa del recorrido</p>
@@ -1410,9 +1410,9 @@ function MapaRutaChofer({ ruta }) {
         </div>
         {navegar && <a href={navegar} target="_blank" rel="noreferrer" className="f-body shrink-0 inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-[11px] font-medium" style={{ background: c.accentSoft, color: c.accent }}><ExternalLink size={12} /> Navegar</a>}
       </div>
-      {ruta.proximaParada && <div className="mx-4 mb-3 rounded-xl p-3 flex items-start gap-2.5" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}><div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center f-mono text-xs font-semibold" style={{ background: c.accent, color: c.bgAlt }}>1</div><div className="min-w-0"><p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.accent }}>Próxima parada</p><p className="f-body text-sm font-semibold truncate mt-0.5" style={{ color: c.text }}>{ruta.proximaParada.cliente}</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>{ruta.proximaParada.direccion}{proximaMinutos ? ` · ${proximaMinutos} min` : ""}{proximaKm ? ` · ${proximaKm} km` : ""}</p></div></div>}
+      {!modoPanel && ruta.proximaParada && <div className="mx-4 mb-3 rounded-xl p-3 flex items-start gap-2.5" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}><div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center f-mono text-xs font-semibold" style={{ background: c.accent, color: c.bgAlt }}>1</div><div className="min-w-0"><p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.accent }}>Próxima parada</p><p className="f-body text-sm font-semibold truncate mt-0.5" style={{ color: c.text }}>{ruta.proximaParada.cliente}</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textMuted }}>{ruta.proximaParada.direccion}{proximaMinutos ? ` · ${proximaMinutos} min` : ""}{proximaKm ? ` · ${proximaKm} km` : ""}</p></div></div>}
       {ruta.modo === "aproximado" && <p className="f-body mx-4 mb-3 rounded-lg px-2.5 py-2 text-[10px]" style={{ background: c.amberSoft, color: c.amber }}>El proveedor de rutas no respondió: se muestra una unión aproximada entre paradas.</p>}
-      <div ref={contenedorRef} className="w-full h-[330px]" aria-label="Mapa interactivo del recorrido del chofer" />
+      <div ref={contenedorRef} className={`w-full ${modoPanel ? "h-[500px] xl:h-[560px]" : "h-[330px]"}`} aria-label="Mapa interactivo del recorrido del chofer" />
       <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderTop: `1px solid ${c.borderSoft}` }}>
         <p className="f-body text-[10px]" style={{ color: c.textFaint }}><b style={{ color: c.textMuted }}>{ruta.ubicacionActual ? "C" : "G"}</b> {origenEtiqueta} · Los números coinciden con las tarjetas.</p>
         <span className="f-body text-[10px] shrink-0" style={{ color: c.textFaint }}>OSM / OSRM</span>
@@ -1430,14 +1430,73 @@ function SeguimientoRepartosAdmin({ rutas }) {
   }, [rutas, camionId]);
   if (!rutas.length) return null;
   const seleccionada = rutas.find((ruta) => ruta.camion.id === camionId) || rutas[0];
+  const proximaMinutos = seleccionada.proximaParada?.duracionSegundos != null ? Math.max(1, Math.round(seleccionada.proximaParada.duracionSegundos / 60)) : null;
+  const proximaKm = seleccionada.proximaParada?.distanciaMetros != null ? (seleccionada.proximaParada.distanciaMetros / 1000).toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
+  const recorridoKm = seleccionada.distanciaMetros != null ? (seleccionada.distanciaMetros / 1000).toLocaleString("es-AR", { maximumFractionDigits: 1 }) : null;
+  const recorridoMinutos = seleccionada.duracionSegundos != null ? Math.max(1, Math.round(seleccionada.duracionSegundos / 60)) : null;
   return (
-    <section className="rounded-2xl p-4" style={{ background: c.surfaceAlt, border: `1px solid ${c.border}` }}>
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div><p className="f-display text-sm font-semibold flex items-center gap-2" style={{ color: c.text }}><Radio size={16} color={c.accent} /> Seguimiento de repartos</p><p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Ubicación del camión, próxima parada y recorrido pendiente en un mismo mapa.</p></div>
-        <div className="flex flex-wrap gap-2">{rutas.map((ruta) => <button key={ruta.camion.id} onClick={() => setCamionId(ruta.camion.id)} className="f-body rounded-xl px-3 py-2 text-xs font-medium inline-flex items-center gap-2" style={{ background: ruta.camion.id === seleccionada.camion.id ? `${ruta.camion.color}22` : c.surface, color: ruta.camion.color, border: `1px solid ${ruta.camion.id === seleccionada.camion.id ? ruta.camion.color : c.border}` }}><span className="w-2 h-2 rounded-full" style={{ background: ruta.ubicacionActual ? c.success : c.textFaint }} />{ruta.camion.nombre}<span className="text-[9px] opacity-70">{ruta.ubicacionActual ? "EN VIVO" : "SIN SEÑAL"}</span></button>)}</div>
+    <section className="rounded-3xl overflow-hidden shadow-sm" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+      <div className="px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" style={{ borderBottom: `1px solid ${c.borderSoft}` }}>
+        <div>
+          <p className="f-display text-base font-semibold flex items-center gap-2" style={{ color: c.text }}><Radio size={17} color={c.accent} /> Seguimiento de repartos</p>
+          <p className="f-body text-[11px] mt-1" style={{ color: c.textFaint }}>Ubicación actual, próxima entrega y recorrido pendiente en tiempo real.</p>
+        </div>
+        <span className="f-body self-start sm:self-auto inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold" style={{ background: rutas.some(ruta => ruta.ubicacionActual) ? c.successSoft : c.surfaceAlt, color: rutas.some(ruta => ruta.ubicacionActual) ? c.success : c.textMuted }}>
+          <span className="w-2 h-2 rounded-full" style={{ background: rutas.some(ruta => ruta.ubicacionActual) ? c.success : c.textFaint }} />
+          {rutas.some(ruta => ruta.ubicacionActual) ? "REPARTOS EN VIVO" : "ESPERANDO UBICACIÓN"}
+        </span>
       </div>
-      {!seleccionada.ubicacionActual && <p className="f-body mt-3 rounded-xl px-3 py-2 text-[11px]" style={{ background: c.amberSoft, color: c.amber }}>El chofer todavía no activó su ubicación. El recorrido se muestra partiendo desde el galpón.</p>}
-      <MapaRutaChofer ruta={seleccionada} />
+      <div className="grid lg:grid-cols-[310px_minmax(0,1fr)]">
+        <aside className="p-4 lg:p-5 space-y-4" style={{ background: c.surfaceAlt, borderRight: `1px solid ${c.borderSoft}` }}>
+          <div>
+            <p className="f-body text-[10px] font-semibold uppercase tracking-[0.12em] mb-2" style={{ color: c.textFaint }}>Repartos de hoy</p>
+            <div className="space-y-2">
+              {rutas.map((ruta) => {
+                const activa = ruta.camion.id === seleccionada.camion.id;
+                return <button key={ruta.camion.id} onClick={() => setCamionId(ruta.camion.id)} className="w-full rounded-2xl p-3 text-left flex items-center gap-3 transition-colors" style={{ background: activa ? c.surface : "transparent", border: `1px solid ${activa ? ruta.camion.color : c.borderSoft}`, boxShadow: activa ? "0 8px 24px rgba(15,23,42,.06)" : "none" }}>
+                  <span className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center" style={{ background: `${ruta.camion.color}20` }}><Truck size={18} color={ruta.camion.color} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="f-display text-sm font-semibold block truncate" style={{ color: c.text }}>{ruta.camion.nombre}</span>
+                    <span className="f-body text-[10px] mt-0.5 flex items-center gap-1.5" style={{ color: ruta.ubicacionActual ? c.success : c.textFaint }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: ruta.ubicacionActual ? c.success : c.textFaint }} />{ruta.ubicacionActual ? "En reparto" : "Sin iniciar"} · {ruta.paradas?.length || 0} parada{ruta.paradas?.length === 1 ? "" : "s"}</span>
+                  </span>
+                  <ChevronRight size={15} color={activa ? ruta.camion.color : c.textFaint} />
+                </button>;
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl p-3.5" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
+            <div className="flex items-start gap-3">
+              <span className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center" style={{ background: c.accentSoft }}><LocateFixed size={17} color={c.accent} /></span>
+              <div className="min-w-0">
+                <p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Ubicación actual</p>
+                <p className="f-display text-sm font-semibold mt-1" style={{ color: c.text }}>{seleccionada.ubicacionActual ? "Señal GPS activa" : "En el galpón"}</p>
+                <p className="f-body text-[10px] mt-1" style={{ color: seleccionada.ubicacionActual ? c.success : c.textMuted }}>{seleccionada.ubicacionActual ? "Actualizando el recorrido automáticamente" : "El chofer todavía no activó su ubicación"}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl p-3.5" style={{ background: seleccionada.proximaParada ? c.accentSoft : c.surface, border: `1px solid ${seleccionada.proximaParada ? c.accent + "44" : c.border}` }}>
+            <div className="flex items-start gap-3">
+              <span className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center" style={{ background: seleccionada.proximaParada ? c.accent : c.surfaceAlt }}><Navigation size={17} color={seleccionada.proximaParada ? c.bgAlt : c.textFaint} /></span>
+              <div className="min-w-0">
+                <p className="f-body text-[10px] uppercase tracking-wide" style={{ color: c.textFaint }}>Próxima parada</p>
+                <p className="f-display text-sm font-semibold mt-1 truncate" style={{ color: c.text }}>{seleccionada.proximaParada?.cliente || "Sin entregas pendientes"}</p>
+                {seleccionada.proximaParada && <><p className="f-body text-[11px] mt-1 leading-snug" style={{ color: c.textMuted }}>{seleccionada.proximaParada.direccion}</p><p className="f-body text-[10px] mt-2 font-medium" style={{ color: c.accent }}>{proximaMinutos ? `A ${proximaMinutos} min` : "Tiempo por calcular"}{proximaKm ? ` · ${proximaKm} km` : ""}</p></>}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl p-3" style={{ background: c.surface }}><p className="f-body text-[9px] uppercase tracking-wide" style={{ color: c.textFaint }}>Recorrido</p><p className="f-mono text-sm mt-1" style={{ color: c.text }}>{recorridoKm ? `${recorridoKm} km` : "—"}</p></div>
+            <div className="rounded-xl p-3" style={{ background: c.surface }}><p className="f-body text-[9px] uppercase tracking-wide" style={{ color: c.textFaint }}>Tiempo aprox.</p><p className="f-mono text-sm mt-1" style={{ color: c.text }}>{recorridoMinutos ? `${recorridoMinutos} min` : "—"}</p></div>
+          </div>
+        </aside>
+        <div className="p-3 lg:p-4 min-w-0" style={{ background: c.bg }}>
+          {!seleccionada.ubicacionActual && <p className="f-body mb-3 rounded-xl px-3 py-2 text-[11px]" style={{ background: c.amberSoft, color: c.amber }}>El recorrido parte desde el galpón hasta que el chofer active su ubicación.</p>}
+          <MapaRutaChofer ruta={seleccionada} modoPanel />
+        </div>
+      </div>
     </section>
   );
 }
@@ -1469,7 +1528,7 @@ function ChoferPanel({ session, onLogout }) {
       const [pedidosDia, cargaDia, rutaDia] = await Promise.all([
         api(`/chofer/pedidos?dia=${dia}`, { token: session.token }),
         api(`/chofer/carga?dia=${dia}`, { token: session.token }),
-        api(`/chofer/ruta?dia=${dia}`, { token: session.token }).catch(() => null),
+        api(`/chofer/ruta?dia=${dia}`, { token: session.token, silencioso: true }).catch(() => null),
       ]);
       setPedidos(pedidosDia); setCarga(cargaDia);
       setRuta(anterior => JSON.stringify(anterior) === JSON.stringify(rutaDia) ? anterior : rutaDia);
@@ -1643,7 +1702,8 @@ function ChoferPanel({ session, onLogout }) {
         {cargando ? <Cargando /> : (
           <>
             <p className="f-body text-[11px] mb-3 flex flex-wrap items-center gap-1.5" style={{ color: c.textFaint }}><MapPin size={11} /> Ruta optimizada por calles {ruta?.ubicacionActual ? "desde tu ubicación actual" : "desde el galpón"} · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap/OSRM</a></p>
-            <div className="space-y-2.5">
+            <MapaRutaChofer ruta={ruta} />
+            <div className="space-y-2.5 mt-4">
               {pedidos.map((o) => (
                 <div key={o.id} className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}`, opacity: dia === "manana" ? 0.75 : 1 }}>
                   <div className="flex items-start justify-between mb-2">
@@ -1693,7 +1753,6 @@ function ChoferPanel({ session, onLogout }) {
               ))}
               {pedidos.length === 0 && <p className="f-body text-xs text-center py-8" style={{ color: c.textFaint }}>Sin pedidos para este día.</p>}
             </div>
-            <MapaRutaChofer ruta={ruta} />
             <CajaChofer session={session} dia={dia} pedidos={pedidos} />
           </>
         )}
@@ -1968,7 +2027,7 @@ function AdminPedidos({ token, camiones }) {
       const [gruposNuevos, cargasNuevas, rutasNuevas] = await Promise.all([
         api(`/admin/pedidos?${params.toString()}`, { token }),
         fechaCarga ? api(`/admin/cargas?fecha=${fechaCarga}`, { token }) : Promise.resolve({ cargas: [] }),
-        fechaCarga ? api(`/admin/rutas?dia=${fechaCarga}`, { token }).catch(() => ({ rutas: [] })) : Promise.resolve({ rutas: [] }),
+        fechaCarga ? api(`/admin/rutas?dia=${fechaCarga}`, { token, silencioso: true }).catch(() => ({ rutas: [] })) : Promise.resolve({ rutas: [] }),
       ]);
       setGrupos(gruposNuevos);
       setCargasPedidos(cargasNuevas.cargas || []);
