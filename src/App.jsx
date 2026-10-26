@@ -272,6 +272,18 @@ function generarFranjasVista(horaDesde, horaHasta) {
   if (desde === null || hasta === null || hasta <= desde) return [];
   return [{ horaDesde, horaHasta }];
 }
+function crearAgendaSemanal(horarios = []) {
+  return DIAS_SEMANA.map(dia => {
+    const horario = horarios.find(item => Number(item.diaSemana) === dia.id);
+    return {
+      diaSemana: dia.id,
+      activo: Boolean(horario),
+      horaDesde: horario?.horaDesde || "09:00",
+      horaHasta: horario?.horaHasta || "15:00",
+      cupoMaximo: String(horario?.cupoMaximo || 6),
+    };
+  });
+}
 function crearDias(referencia = new Date()) {
   const desplazada = dias => new Date(referencia.getTime() + dias * 24 * 60 * 60 * 1000);
   return {
@@ -2832,7 +2844,7 @@ function ZonasOperativas({ zonas, onAgregar, onRenombrar, onEliminar }) {
 function AgendaBarrios({ token, zonas, onGuardado }) {
   const c = useTheme();
   const [zonaId, setZonaId] = useState("");
-  const [agenda, setAgenda] = useState({ diasSemana: [], horaDesde: "09:00", horaHasta: "15:00", cupoMaximo: "6" });
+  const [agenda, setAgenda] = useState(() => crearAgendaSemanal());
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [ok, setOk] = useState("");
@@ -2850,12 +2862,7 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
     api(`/admin/zonas/${zonaId}/agenda`, { token })
       .then(data => {
         if (!vigente) return;
-        setAgenda({
-          diasSemana: data.diasSemana || [],
-          horaDesde: data.horaDesde || "09:00",
-          horaHasta: data.horaHasta || "15:00",
-          cupoMaximo: String(data.cupoMaximo || 6),
-        });
+        setAgenda(crearAgendaSemanal(data.horarios || []));
       })
       .catch(e => vigente && setError(e.message || "No pudimos cargar la agenda."))
       .finally(() => vigente && setCargando(false));
@@ -2863,23 +2870,29 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
   }, [zonaId, token]);
 
   const zona = zonas.find(item => String(item.id) === String(zonaId));
-  const franjas = useMemo(() => generarFranjasVista(agenda.horaDesde, agenda.horaHasta), [agenda.horaDesde, agenda.horaHasta]);
-  const alternarDia = (dia) => setAgenda(actual => ({
-    ...actual,
-    diasSemana: actual.diasSemana.includes(dia) ? actual.diasSemana.filter(valor => valor !== dia) : [...actual.diasSemana, dia].sort((a, b) => a - b),
-  }));
+  const horariosActivos = useMemo(() => agenda.filter(dia => dia.activo), [agenda]);
+  const agendaValida = useMemo(() => horariosActivos.every(dia => {
+    const cupo = Number(dia.cupoMaximo);
+    return generarFranjasVista(dia.horaDesde, dia.horaHasta).length > 0 && Number.isInteger(cupo) && cupo >= 1 && cupo <= 100;
+  }), [horariosActivos]);
+  const actualizarDia = (diaSemana, cambios) => setAgenda(actual => actual.map(dia => dia.diaSemana === diaSemana ? { ...dia, ...cambios } : dia));
   const guardar = async () => {
     setOk(""); setError("");
-    if (!agenda.diasSemana.length) return setError("Elegí al menos un día de reparto.");
-    if (!franjas.length) return setError("Ingresá un rango horario válido.");
+    if (!agendaValida) return setError("Revisá el horario y el cupo de cada día habilitado.");
     setGuardando(true);
     try {
       const data = await api(`/admin/zonas/${zonaId}/agenda`, {
         method: "PUT", token,
-        body: { ...agenda, cupoMaximo: Number(agenda.cupoMaximo) },
+        body: {
+          horarios: horariosActivos.map(({ diaSemana, horaDesde, horaHasta, cupoMaximo }) => ({
+            diaSemana, horaDesde, horaHasta, cupoMaximo: Number(cupoMaximo),
+          })),
+        },
       });
-      setAgenda({ diasSemana: data.diasSemana, horaDesde: data.horaDesde, horaHasta: data.horaHasta, cupoMaximo: String(data.cupoMaximo) });
-      setOk(`Horario de ${data.barrio} guardado: ${data.horaDesde} a ${data.horaHasta}.`);
+      setAgenda(crearAgendaSemanal(data.horarios || []));
+      setOk(data.horarios.length
+        ? `Agenda semanal de ${data.barrio} guardada correctamente.`
+        : `${data.barrio} quedó sin días de reparto habilitados.`);
       onGuardado?.();
     } catch (e) { setError(e.message || "No pudimos guardar la agenda."); }
     setGuardando(false);
@@ -2889,7 +2902,7 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
     <div className="rounded-2xl p-4" style={{ background: c.surface, border: `1px solid ${c.border}` }}>
       <div className="flex items-start gap-2 mb-3">
         <CalendarClock size={16} color={c.accent} className="mt-0.5 shrink-0" />
-        <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Horarios de entrega por barrio</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Elegí un barrio y definí sus días y rango horario. El cliente verá el rango completo, por ejemplo de 10:00 a 13:00.</p></div>
+        <div><p className="f-body text-sm font-medium" style={{ color: c.text }}>Agenda semanal por barrio</p><p className="f-body text-[11px] mt-0.5" style={{ color: c.textFaint }}>Cada día puede tener su propio horario y cupo. También podés marcar que un día no se reparte en esa zona.</p></div>
       </div>
       {zonas.length === 0 ? <p className="f-body text-xs" style={{ color: c.textFaint }}>Primero agregá un barrio.</p> : (
         <div className="space-y-3">
@@ -2898,35 +2911,41 @@ function AgendaBarrios({ token, zonas, onGuardado }) {
           </select>
           {cargando ? <Cargando label="Cargando agenda..." /> : (
             <>
-              <div>
-                <p className="f-body text-xs mb-2" style={{ color: c.textMuted }}>Días de reparto</p>
-                <div className="flex flex-wrap gap-2">
-                  {DIAS_SEMANA.map(dia => {
-                    const activo = agenda.diasSemana.includes(dia.id);
-                    return <button key={dia.id} onClick={() => alternarDia(dia.id)} className="f-body px-3 py-2 rounded-xl text-xs font-medium" style={{ background: activo ? c.accentSoft : c.bgAlt, border: `1px solid ${activo ? c.accent : c.border}`, color: activo ? c.accent : c.textMuted }}>{dia.label}</button>;
-                  })}
+              <div className="space-y-2">
+                {agenda.map(configuracion => {
+                  const dia = DIAS_SEMANA.find(item => item.id === configuracion.diaSemana);
+                  const cupo = Number(configuracion.cupoMaximo);
+                  const valido = !configuracion.activo || (generarFranjasVista(configuracion.horaDesde, configuracion.horaHasta).length > 0 && Number.isInteger(cupo) && cupo >= 1 && cupo <= 100);
+                  return <div key={configuracion.diaSemana} className="rounded-xl p-3" style={{ background: configuracion.activo ? c.bgAlt : c.surfaceAlt, border: `1px solid ${configuracion.activo && !valido ? c.danger : c.border}` }}>
+                    <div className={`flex items-center justify-between gap-3 ${configuracion.activo ? "mb-3" : ""}`}>
+                      <div><p className="f-body text-xs font-semibold" style={{ color: c.text }}>{dia.label}</p><p className="f-body text-[10px] mt-0.5" style={{ color: configuracion.activo ? c.success : c.textFaint }}>{configuracion.activo ? "Hay reparto" : "No se hace reparto"}</p></div>
+                      <button type="button" aria-pressed={configuracion.activo} onClick={() => actualizarDia(configuracion.diaSemana, { activo: !configuracion.activo })} className="f-body px-3 py-1.5 rounded-lg text-[11px] font-medium" style={{ background: configuracion.activo ? c.accentSoft : c.surface, color: configuracion.activo ? c.accent : c.textMuted, border: `1px solid ${configuracion.activo ? c.accent : c.border}` }}>{configuracion.activo ? "Se reparte" : "No se hace"}</button>
+                    </div>
+                    {configuracion.activo && <div className="grid sm:grid-cols-3 gap-2">
+                      <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Comienza
+                        <input type="time" step="1800" value={configuracion.horaDesde} onChange={e => actualizarDia(configuracion.diaSemana, { horaDesde: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+                      </label>
+                      <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Finaliza
+                        <input type="time" step="1800" value={configuracion.horaHasta} onChange={e => actualizarDia(configuracion.diaSemana, { horaHasta: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+                      </label>
+                      <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Cupo del día
+                        <input type="number" min="1" max="100" value={configuracion.cupoMaximo} onChange={e => actualizarDia(configuracion.diaSemana, { cupoMaximo: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
+                      </label>
+                    </div>}
+                  </div>;
+                })}
+              </div>
+              <div className="rounded-xl p-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}>
+                <p className="f-body text-xs font-medium" style={{ color: c.text }}>Resumen de {zona?.barrio || "la zona"}</p>
+                <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5 mt-2">
+                  {agenda.map(configuracion => <div key={configuracion.diaSemana} className="f-body flex justify-between gap-3 text-[10px]"><span style={{ color: c.textMuted }}>{DIAS_SEMANA.find(dia => dia.id === configuracion.diaSemana)?.label}</span><span className="font-medium" style={{ color: configuracion.activo ? c.accent : c.textFaint }}>{configuracion.activo ? `${configuracion.horaDesde}–${configuracion.horaHasta}` : "Sin reparto"}</span></div>)}
                 </div>
-              </div>
-              <div className="grid sm:grid-cols-3 gap-2 p-3 rounded-xl" style={{ background: c.bgAlt, border: `1px dashed ${c.border}` }}>
-                <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Comienza
-                  <input type="time" step="3600" value={agenda.horaDesde} onChange={e => setAgenda({ ...agenda, horaDesde: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
-                </label>
-                <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Finaliza
-                  <input type="time" step="3600" value={agenda.horaHasta} onChange={e => setAgenda({ ...agenda, horaHasta: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
-                </label>
-                <label className="f-body text-[10px]" style={{ color: c.textFaint }}>Cupo del rango
-                  <input type="number" min="1" max="100" value={agenda.cupoMaximo} onChange={e => setAgenda({ ...agenda, cupoMaximo: e.target.value })} className="block w-full mt-1 px-2.5 py-2 rounded-lg text-xs outline-none" style={{ background: c.surface, border: `1px solid ${c.border}`, color: c.text }} />
-                </label>
-              </div>
-              <div className="rounded-xl p-3 flex flex-wrap items-center gap-3" style={{ background: c.accentSoft, border: `1px solid ${c.accent}33` }}>
-                <div className="flex-1"><p className="f-body text-xs font-medium" style={{ color: c.text }}>Rango que verá el cliente</p><p className="f-body text-[10px] mt-1" style={{ color: c.textFaint }}>{zona ? `Se aplicará solamente a ${zona.barrio}. ${zona.camionNombre ? `El reparto está asignado a ${zona.camionNombre}.` : "Todavía falta asignarle un camión."}` : "Elegí un barrio para configurar sus entregas."}</p></div>
-                {franjas.length ? <span className="f-mono text-sm rounded-xl px-3 py-2" style={{ background: c.surface, color: c.accent, border: `1px solid ${c.border}` }}>{agenda.horaDesde}–{agenda.horaHasta}</span> : <span className="f-body text-[11px]" style={{ color: c.amber }}>Revisá las horas.</span>}
               </div>
               <ErrorBanner mensaje={error} />
               {error && <p className="f-body text-xs" style={{ color: c.danger }}>{error}</p>}
               {ok && <p className="f-body text-xs" style={{ color: c.success }}>{ok}</p>}
-              <button disabled={guardando || !zona || !agenda.diasSemana.length || !franjas.length} onClick={guardar} className="f-body w-full px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={13} /> : <Save size={13} />} Guardar horario de {zona?.barrio || "este barrio"}</button>
-              <p className="f-body text-[10px]" style={{ color: c.textFaint }}>Cuando el cliente elija este barrio, verá únicamente sus fechas y el rango completo disponible. El chofer seguirá recibiendo los pedidos ordenados por horario y recorrido.</p>
+              <button disabled={guardando || !zona || !agendaValida} onClick={guardar} className="f-body w-full px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-40" style={{ background: c.accent, color: c.bgAlt }}>{guardando ? <Spinner size={13} /> : <Save size={13} />} Guardar agenda de {zona?.barrio || "esta zona"}</button>
+              <p className="f-body text-[10px]" style={{ color: c.textFaint }}>El cliente solamente podrá elegir los días habilitados para este barrio y verá el horario específico de cada uno.</p>
             </>
           )}
         </div>
